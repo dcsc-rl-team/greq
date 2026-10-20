@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "greq"
+version = "0.1.0"
+description = "Greedy-resolvent matrix-gain Q-learning"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "chex>=0.1.91",
+    "distrax>=0.1.7",
+    "jax>=0.8.0,<0.9",
+    "jaxdp==0.3.0",
+    "jaxtor==0.2.0",
+    "numpy>=2.3",
+    "tyro>=1.0.6",
+]
+
+[dependency-groups]
+dev = ["pytest>=9", "ruff>=0.14.5", "ty>=0.0.58"]
+
+[tool.uv.sources]
+jaxtor = { git = "https://github.com/TolgaOk/jaxtor", rev = "15110d7a7b8c38c9ff192d6b1ad062be5a5273d7" }
+jaxdp = { git = "https://github.com/TolgaOk/jaxdp", rev = "70955c262287523bd8ff2a4f9bfb3010d26edc1b" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/greq"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ty.src]
+include = ["src", "scripts"]
