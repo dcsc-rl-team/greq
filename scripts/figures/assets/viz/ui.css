@@ -1,0 +1,159 @@
+/* Shared styles for figure pages and interactive controls. */
+
+/* ---------- Color tokens shared with palette.mjs ---------- */
+:root {
+  color-scheme: light;
+  /* Neutrals */
+  /* High contrast, matching the figures: labels near-black, borders and tracks clearly visible. */
+  --ink: #0f172a; --muted: #334155; --border: #64748b; --rule: #cbd5e1;
+  --surface: #ffffff; --page: #f4f6f8; --hover: #e8edf3;
+  /* Focus defaults. palette.mjs setPalette() overwrites --s1…--s6, --ref and --accent. */
+  --s1: #1f3a5f; --s2: #e5470c; --s3: #7d8896; --s4: #6f93ab; --s5: #b59f7f; --s6: #a28fb5;
+  --ref: #aab3bd;                                   /* reference / ground truth: always dashed */
+  /* Context: background fields, streamlines, and secondary marks */
+  --context: #778392; --context-light: #a8b1bd;
+  /* Binary outcomes with their pale region tints */
+  --good: #3267b0; --bad: #b34b4b; --good-tint: #edf3fc; --bad-tint: #fcf0f0;
+  --accent: var(--s2);
+  --danger-ink: #8a2518; --danger-tint: #fff0ed; --danger-border: #d69b91;
+  --radius-card: 10px; --radius-control: 6px; --control-h: 34px;
+  --shadow-pop: 0 6px 20px rgb(24 34 48 / 12%);
+}
+
+/* ---------- Page; cards only for an explorer's toolbar and full-bleed stage ---------- */
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.4 system-ui, sans-serif; }
+main { width: calc(100% - 32px); max-width: 850px; margin: 16px auto; display: flex; flex-direction: column; gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); padding: 12px; }
+.stage { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); overflow: hidden; position: relative; }
+.stage > svg { display: block; width: 100%; height: auto; touch-action: none; }
+
+/* ---------- Controls ---------- */
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.controls > label, .field { display: flex; flex-direction: column; gap: 5px; position: relative; font-size: 12px; font-weight: 650; color: var(--ink); }
+.controls .wide { min-width: 180px; }
+.controls .range { min-width: 140px; flex: 1; }
+output { position: absolute; right: 0; top: 0; color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+select, input[type=number], button {
+  height: var(--control-h); padding: 0 10px; background-color: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); border-radius: var(--radius-control); font: 550 14px/1.2 system-ui, sans-serif; cursor: pointer;
+}
+input[type=number] { width: 84px; cursor: text; font-variant-numeric: tabular-nums; }
+input[type=number]:invalid { border-color: var(--s1); }
+select {
+  appearance: none; padding-right: 30px;
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23475467' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background: var(--surface) var(--chevron) no-repeat right 8px center;
+}
+@supports (appearance: base-select) {
+  select, select::picker(select) { appearance: base-select; }
+  select { display: flex; align-items: center; padding-inline: 10px; background-image: none; }
+  select::picker-icon { content: ''; width: 16px; height: 16px; margin-inline-start: auto; background: var(--chevron) center / 16px no-repeat; }
+  select:open::picker-icon { transform: rotate(180deg); }
+  select::picker(select) { margin-block-start: 6px; padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-pop); }
+  select option { min-height: 34px; padding: 7px 10px; border-radius: 4px; }
+  select option:hover, select option:focus { background: var(--hover); outline: none; }
+  select option:checked { background: var(--good-tint); color: var(--accent); }
+}
+input[type=range] { appearance: none; margin: 0; width: 100%; height: var(--control-h); background: transparent; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 4px; background: var(--muted); border-radius: 2px; }
+input[type=range]::-moz-range-track { height: 4px; background: var(--muted); border-radius: 2px; }
+input[type=range]::-webkit-slider-thumb { appearance: none; margin-top: -6px; width: 16px; height: 16px; background: var(--ink); border: 2px solid white; border-radius: 50%; box-shadow: 0 0 0 1px var(--ink); }
+input[type=range]::-moz-range-thumb { width: 12px; height: 12px; background: var(--ink); border: 2px solid white; border-radius: 50%; box-shadow: 0 0 0 1px var(--ink); }
+.buttons { display: flex; gap: 6px; }
+button:hover, select:hover { border-color: var(--ink); background-color: var(--page); }
+:disabled { opacity: .45; cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* Control panel (controls.mjs panel()): a toolbar above a figure, or .vertical as a sidebar beside it. */
+.panel { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); }
+.panel .wide { min-width: 160px; }
+.panel .range { flex: 1; min-width: 140px; }
+.panel .choices { flex-basis: 100%; justify-content: center; }
+.panel .group { flex-basis: 100%; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--rule); font-size: 11.5px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; color: var(--ink); }
+.panel .group:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.panel.vertical { flex-direction: column; align-items: stretch; flex-wrap: nowrap; }
+.panel.vertical .choices { flex-direction: column; justify-content: start; gap: 2px; }
+.panel.vertical .choices label { padding: 0; }          /* switches line up with the other controls */
+.panel.vertical .segmented { display: grid; }
+.panel.vertical .buttons button { flex: 1; }
+
+/* Segmented control: mutually exclusive options on a tinted track with a raised selection.
+   Markup: <div class="segmented" role="radiogroup"> with <label><input type=radio>Text</label> children.
+   The div supports Safari grid layout; radio inputs provide keyboard access. Options have equal widths. */
+.segmented { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: stretch; gap: 2px; box-sizing: border-box; height: var(--control-h); padding: 3px; border-radius: 8px; background: #e2e8f0; box-shadow: inset 0 0 0 1px #cbd5e1; }
+.segmented label { position: relative; display: flex; align-items: center; justify-content: center; height: calc(var(--control-h) - 6px); padding: 0 12px; border-radius: 6px; font: 550 14px/1 system-ui, sans-serif; color: #334155; white-space: nowrap; cursor: pointer; transition: background-color .12s, color .12s; }
+.segmented label:hover { color: var(--ink); }
+.segmented input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.segmented label:has(:checked) { background: var(--surface); color: var(--ink); font-weight: 700; box-shadow: 0 1px 3px rgb(15 23 42 / 22%), 0 0 0 1px rgb(15 23 42 / 14%); }
+.segmented label:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Long segmented controls scroll horizontally within the available width. */
+.field:has(> .segmented) { max-width: 100%; min-width: 0; }
+.segmented { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+
+/* Switches: booleans. Each one is tinted with the series it toggles, so the switch row is also the legend. */
+.layers { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px 24px; padding-top: 12px; }
+.choices { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.choices label { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 6px; border-radius: 6px; font-size: 14px; font-weight: 550; color: var(--ink); cursor: pointer; }
+.choices label:hover { background: var(--page); }
+input[role=switch] { appearance: none; position: relative; flex: none; width: 32px; height: 20px; margin: 0; border-radius: 999px; background: #94a3b8; cursor: pointer; }
+input[role=switch]::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: white; transition: transform 120ms ease; }
+input[role=switch]:checked { background: var(--c, var(--muted)); }
+input[role=switch]:checked::after { transform: translateX(12px); }
+
+.busy { width: 8px; height: 8px; border-radius: 50%; background: var(--ink); animation: pulse 1s infinite alternate; }
+@keyframes pulse { to { opacity: .45; } }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Figures ---------- */
+.fig { position: relative; min-width: 0; }
+.fig > svg { display: block; overflow: visible; }
+.tip { position: absolute; z-index: 2; pointer-events: none; min-width: 110px; padding: 6px 8px; background: rgb(255 255 255 / 97%); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow-pop); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tip b { display: block; margin-bottom: 2px; font-weight: 600; }
+.tip div { display: flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 500; }
+.tip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+.tip span { margin-left: auto; padding-left: 12px; color: var(--ink); font-weight: 650; }
+
+/* ---------- Explanation controllers (controls.mjs) ---------- */
+/* Chips: legend + filter. Off = hollow swatch, struck text. */
+/* Sits on its own row directly above the figure; the negative margin lines the first swatch up with the plot's left edge. */
+.chips { display: flex; flex-wrap: wrap; gap: 2px 4px; margin: 0 0 6px -9px; }
+.chips button { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 9px; border: 0; border-radius: 999px; background: transparent; font: 550 14px system-ui, sans-serif; color: var(--ink); cursor: pointer; }
+.chips button:hover { background: var(--page); }
+.chips button[aria-pressed=false] { color: #94a3b8; text-decoration: line-through; }
+.chips .sw.line { width: 18px; border-top: 3px solid var(--c); }
+.chips .sw.line.dashed { border-top-style: dashed; }
+.chips .sw.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); border: 1.5px solid var(--c); }
+.chips [aria-pressed=false] .sw { opacity: .35; }
+
+/* Stepper: numbered dots + one-line caption. */
+.stepper { display: flex; align-items: center; gap: 6px; margin-left: -6px; font-size: 14px; }
+.stepper button { height: 24px; min-width: 24px; padding: 0 6px; border: 0; border-radius: 999px; background: transparent; color: var(--ink); font: 650 14px system-ui, sans-serif; }
+.stepper button:hover:not(:disabled) { background: var(--page); }
+.stepper .dots { display: flex; gap: 2px; }
+.stepper .dots button[aria-current] { background: var(--ink); color: white; }
+.stepper .caption { margin-left: 6px; color: var(--ink); font-weight: 550; }
+
+/* Scrubber: round play button + slim slider + tabular readout. */
+.scrubber { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.scrubber .play { flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: var(--ink); display: grid; place-items: center; }
+.scrubber .play:hover { background: var(--muted); }
+.scrubber .play svg { width: 14px; height: 14px; fill: white; }
+.scrubber input[type=range] { flex: 1; height: 28px; }
+.scrubber output { position: static; min-width: 5ch; text-align: right; font-weight: 700; }
+
+/* Scrub number: draggable value inside running text. */
+.scrub { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; border-bottom: 1.5px dashed currentColor; cursor: ew-resize; user-select: none; touch-action: none; }
+.scrub:hover, .scrub.active { background: var(--good-tint); border-bottom-style: solid; }
+
+/* ---------- Responsive and accessibility ---------- */
+@media (max-width: 700px) {
+  main { width: calc(100% - 20px); margin: 10px auto; gap: 10px; }
+  .card { padding: 10px; } .controls .wide { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .busy { animation: none; } input[role=switch]::after, .segmented label { transition: none; } }
+@media (forced-colors: active) {
+  input[role=switch] { border: 1px solid ButtonText; background: Canvas; }
+  input[role=switch]::after { background: ButtonText; }
+  input[role=switch]:checked { background: Highlight; }
+}

@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from jaxdp.mdp import Mdp
 from jaxtor.env.tabular import TabularEnv
 from jaxtor.sampler import Imc, Mc
 
-from greq import Greq, QLearning, checkpoint
+from greq import BatchedZap, Greq, InverseGain, QLearning, Zap, checkpoint
 from greq.environment import Garnet
-from greq.online import Online, Uniform
+from greq.evaluation import Evaluation, optimal_q
+from greq.policy import Uniform
+from scripts.run import Experiment
 
 
 def composition(method=Greq, block=5, gamma=0.9):
@@ -25,9 +30,26 @@ def composition(method=Greq, block=5, gamma=0.9):
         mc=mc.init(jax.random.key(1), env_state), agent=policy.init(jax.random.key(2))
     )
     agent = method(n_states=3, n_actions=2, gamma=gamma)
-    online = Online(sampler=sampler, learner=agent, n_steps=block)
-    initial = online.init(sampler=sampler_state, learner=agent.init(jnp.zeros((2, 3))))
-    return online, initial
+    experiment = Experiment(
+        sampler=sampler, learner=agent, n_steps=block, eval_every=block
+    )
+    model = env_state.mdp
+    mdp = Mdp(
+        transition=model.transition,
+        reward=model.reward,
+        initial=model.initial,
+        terminal=model.terminal,
+    )
+    row = jnp.asarray(
+        [0, gamma, agent.eta, agent.k0 if isinstance(agent, QLearning) else agent.rho]
+    )
+    initial = experiment.init(
+        row,
+        sampler_state,
+        agent.init(jnp.zeros((2, 3))),
+        Evaluation.State(mdp=mdp, reference=optimal_q(mdp, gamma)),
+    )
+    return experiment, initial
 
 
 def assert_same(left, right):
@@ -39,11 +61,19 @@ def assert_same(left, right):
         np.testing.assert_array_equal(x, y)
 
 
-@pytest.mark.parametrize("method", [Greq, QLearning])
+@pytest.mark.parametrize(
+    "method",
+    [
+        Greq,
+        QLearning,
+        partial(Zap, gain=InverseGain()),
+        partial(BatchedZap, gain=InverseGain(), batch_size=7),
+    ],
+)
 def test_checkpoint_continuation(method, tmp_path):
     """Restored sampler and learning state reproduce the next block."""
-    online, initial = composition(method)
-    advance = jax.jit(online.advance)
+    experiment, initial = composition(method)
+    advance = jax.jit(experiment.advance)
     middle = advance(initial)
     path = tmp_path / "state.npz"
     checkpoint.save(path, middle)
@@ -85,8 +115,16 @@ def test_block_boundaries_do_not_reset_chain():
     assert int(after_small.sampler.mc.env.step) == 10
 
 
-def test_methods_have_identical_behavior_streams():
-    full, a = composition(Greq)
+@pytest.mark.parametrize(
+    "method",
+    [
+        Greq,
+        partial(Zap, gain=InverseGain()),
+        partial(BatchedZap, gain=InverseGain(), batch_size=7),
+    ],
+)
+def test_methods_have_identical_behavior_streams(method):
+    full, a = composition(method)
     baseline, b = composition(QLearning)
     a = jax.jit(full.advance)(a)
     b = jax.jit(baseline.advance)(b)
@@ -95,8 +133,8 @@ def test_methods_have_identical_behavior_streams():
 
 def test_long_horizon_gain_drift():
     """After 10,000 steps, float64 gain agrees with a fresh linear solve."""
-    online, initial = composition(block=10_000, gamma=0.999)
-    state = jax.jit(online.advance)(initial)
+    experiment, initial = composition(block=10_000, gamma=0.999)
+    state = jax.jit(experiment.advance)(initial)
     model = np.asarray(state.learner.model)
     gain = np.asarray(state.learner.gain)
     matrix = np.eye(6) - 0.999 * model

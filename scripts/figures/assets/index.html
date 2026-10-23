@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Learning curves</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="viz/ui.css">
+  <link rel="stylesheet" href="viz/percentiles.css">
+  <style>
+    body { background: var(--surface); }
+    main { max-width: 1120px; }
+    main.single-panel { max-width: 600px; }
+    main.runtime-page { max-width: 760px; }
+    .runtime-page .plots { display: block; }
+    .single-panel .plots { grid-template-columns: minmax(0, 1fr); }
+    #figure-title { margin: 0; font-size: 22px; font-weight: 600; }
+    #controls .choices { flex-basis: auto; justify-content: flex-start; }
+    .plots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    .plot { min-width: 0; }
+    .exports { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 0; }
+    .export-error { position: static; display: block; color: #a11; font-size: 12px; }
+    @media (max-width: 760px) { .plots { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 id="figure-title" hidden></h1>
+    <div id="controls"></div>
+    <div id="methods" aria-label="Methods"></div>
+    <div class="plots">
+      <div class="plot" id="sample-panel">
+        <div id="samples"></div>
+        <div class="exports">
+          <button type="button" id="export-samples" data-figure="samples" data-format="svg">Export SVG</button>
+          <button type="button" id="export-samples-pdf" data-figure="samples" data-format="pdf">Export PDF</button>
+        </div>
+        <output class="export-error" role="alert"></output>
+      </div>
+      <div class="plot" id="time-panel">
+        <div id="time"></div>
+        <div class="exports">
+          <button type="button" id="export-time" data-figure="time" data-format="svg">Export SVG</button>
+          <button type="button" id="export-time-pdf" data-figure="time" data-format="pdf">Export PDF</button>
+        </div>
+        <output class="export-error" role="alert"></output>
+      </div>
+    </div>
+    <div id="theme"></div>
+  </main>
+  <script src="viz/vendor/d3.v7.min.js"></script>
+  <script type="module" src="figures.mjs"></script>
+</body>
+</html>

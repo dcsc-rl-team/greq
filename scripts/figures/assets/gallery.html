@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Experiment figures</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="__STYLESHEET__">
+  <style>
+    body { background: var(--surface); }
+    main { max-width: 1152px; }
+    .panel { margin: 0 16px; }
+    .panel a { color: var(--ink); padding: 8px; }
+    select { max-width: 100%; }
+    iframe { width: 100%; height: 900px; border: 0; display: block; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="panel">
+      <label class="field">Experiment<select id="experiment"></select></label>
+      <a id="open-figure" target="_blank" rel="noopener">Open figure</a>
+    </div>
+    <iframe id="figure-page" title="Selected experiment figures"></iframe>
+  </main>
+  <script id="gallery-data" type="application/json">__PAGES__</script>
+  <script id="gallery-bundle" type="application/json">__BUNDLE__</script>
+  <script type="module">
+    const pages = JSON.parse(document.querySelector('#gallery-data').textContent);
+    const select = document.querySelector('#experiment');
+    const frame = document.querySelector('#figure-page');
+    const link = document.querySelector('#open-figure');
+    const bundle = JSON.parse(document.querySelector('#gallery-bundle').textContent);
+    const assetURLs = new Map();
+    if (bundle) {
+      for (const [name, content] of Object.entries(bundle.assets)) {
+        const type = name.endsWith('.css') ? 'text/css' : 'text/javascript';
+        assetURLs.set(name, URL.createObjectURL(new Blob([content], { type })));
+      }
+    }
+    const json = value => JSON.stringify(value).replaceAll('<', '\\u003c');
+    function embeddedPage(index) {
+      const doc = new DOMParser().parseFromString(bundle.template, 'text/html');
+      const imports = Object.fromEntries([...assetURLs].map(([name, url]) => [`greq-offline/${name}`, url]));
+      const map = doc.createElement('script');
+      map.type = 'importmap';
+      map.textContent = json({ imports });
+      doc.head.append(map);
+      const data = doc.createElement('script');
+      data.type = 'application/json';
+      data.id = 'figure-data';
+      data.textContent = json(bundle.pages[index]);
+      doc.body.prepend(data);
+      for (const element of doc.querySelectorAll('link[rel="stylesheet"], script[src]')) {
+        const attribute = element.tagName === 'LINK' ? 'href' : 'src';
+        const name = element.getAttribute(attribute);
+        if (!assetURLs.has(name)) throw Error(`Missing embedded asset: ${name}`);
+        if (element.type === 'module') {
+          element.removeAttribute('src');
+          element.textContent = `import(${JSON.stringify(`greq-offline/${name}`)});`;
+        } else element.setAttribute(attribute, assetURLs.get(name));
+      }
+      return '<!doctype html>' + doc.documentElement.outerHTML;
+    }
+    let observer, openedPage;
+    for (const [index, page] of pages.entries()) {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = page.label;
+      select.append(option);
+    }
+    frame.addEventListener('load', () => {
+      observer?.disconnect();
+      const content = frame.contentDocument?.querySelector('main');
+      if (!content) return;
+      const resize = () => {
+        const height = Math.ceil(content.getBoundingClientRect().height + 32);
+        if (frame.style.height !== `${height}px`) frame.style.height = `${height}px`;
+      };
+      observer = new ResizeObserver(resize);
+      observer.observe(content);
+      resize();
+    });
+    const show = index => {
+      select.value = String(index);
+      const page = pages[index];
+      if (bundle) {
+        const document = embeddedPage(index);
+        frame.srcdoc = document;
+        if (openedPage) URL.revokeObjectURL(openedPage);
+        openedPage = URL.createObjectURL(new Blob([document], { type: 'text/html' }));
+        link.href = openedPage;
+      } else {
+        const url = new URL(page.url, location.href);
+        const settings = new URLSearchParams(location.search);
+        for (const key of ['mode', 'palette']) {
+          if (settings.has(key)) url.searchParams.set(key, settings.get(key));
+        }
+        frame.src = url.href;
+        link.href = url.href;
+      }
+      frame.title = page.label;
+      document.title = page.label;
+      const address = new URL(location.href);
+      address.searchParams.set('figure', String(index));
+      history.replaceState(null, '', address);
+    };
+    select.addEventListener('change', () => show(Number(select.value)));
+    const requested = Number(new URLSearchParams(location.search).get('figure') ?? 0);
+    show(Number.isInteger(requested) && requested >= 0 && requested < pages.length ? requested : 0);
+    document.documentElement.dataset.ready = 'true';
+  </script>
+</body>
+</html>

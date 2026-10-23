@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from greq.batched_zap import BatchedZap
 from greq.greq import Greq
+from greq.inverse_gain import InverseGain
 from greq.q_learning import QLearning
+from greq.zap import Zap
 
-__all__ = ["Greq", "QLearning"]
+__all__ = ["BatchedZap", "Greq", "InverseGain", "QLearning", "Zap"]

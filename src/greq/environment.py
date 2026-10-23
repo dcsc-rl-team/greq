@@ -1,4 +1,4 @@
-"""Paper-compatible Garnet rewards with jaxdp transition generation."""
+"""Garnet MDPs with deterministic state-action rewards and jaxdp transitions."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ class Garnet:
 
     Transition matrices come from ``jaxdp``. Rewards are independent uniform
     draws per state-action pair, broadcast over successor states to implement
-    the paper's deterministic ``r(s, a)`` convention.
+    deterministic rewards ``r(s, a)``.
     """
 
     n_states: int = 10
@@ -67,7 +67,7 @@ class Garnet:
 
 
 def require_irreducible(mdp: Mdp) -> None:
-    """Reject missing state coverage under uniform behavior, without resampling."""
+    """Require irreducibility of the supplied MDP under uniform behavior."""
     reachable = np.any(np.asarray(mdp.transition) > 0, axis=0).T
     reachable |= np.eye(mdp.state_size, dtype=bool)
     for k in range(mdp.state_size):

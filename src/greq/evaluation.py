@@ -11,6 +11,9 @@ from chex import dataclass
 from jaxdp import bellman_optimality_operator, policy_evaluation
 from jaxdp.mdp import Mdp
 
+_bellman_q = jax.jit(bellman_optimality_operator.q)
+_policy_v = jax.jit(policy_evaluation.v)
+
 
 def greedy_policy(q: jax.Array) -> jax.Array:
     """Select the lowest maximizing action for each state of an ``(A, S)`` table."""
@@ -25,7 +28,7 @@ def optimal_q(
 
     The host-side solver returns only when ``||Tq-q||_inf / (1-gamma)`` is
     at most ``value_tol``. Insufficient precision or iterations raise an
-    error instead of returning an uncertified reference.
+    certification error.
     """
     if not 0 < gamma < 1:
         raise ValueError("gamma must lie in (0, 1)")
@@ -54,8 +57,8 @@ def optimal_q(
 class Evaluation:
     """Read exact errors and greedy-policy return from a continuing MDP.
 
-    Policy return evaluates the selected policy from the initial state
-    distribution, rather than maximizing over its action values a second time.
+    Policy return is ``d0 @ V_pi`` for the selected greedy policy ``pi``
+    and initial state distribution ``d0``.
 
     Attributes:
         gamma: Discount factor in ``(0, 1)``.
@@ -66,7 +69,7 @@ class Evaluation:
 
     Public methods:
         init: Combine the supplied MDP and reference Q-table.
-        evaluate: Compute diagnostics without modifying learning or RNG state.
+        evaluate: Compute diagnostics while preserving learning and RNG state.
     """
 
     gamma: float
@@ -110,15 +113,23 @@ class Evaluation:
         return self.State(mdp=mdp, reference=reference)
 
     def evaluate(self, q: jax.Array, state: Evaluation.State) -> Evaluation.Metrics:
-        """Read metrics without consuming samples or advancing a random stream."""
-        chex.assert_equal_shape([q, state.reference])
-        target = bellman_optimality_operator.q(state.mdp, q, self.gamma)
-        value = policy_evaluation.v(state.mdp, greedy_policy(q), self.gamma)
-        policy_return = state.mdp.initial @ value
-        optimum = state.mdp.initial @ jnp.max(state.reference, axis=0)
-        return self.Metrics(
-            bellman_linf=jnp.max(jnp.abs(target - q)),
-            value_linf=jnp.max(jnp.abs(q - state.reference)),
-            policy_return=policy_return,
-            policy_gap=optimum - policy_return,
-        )
+        """Compute metrics from the Q-table, MDP, and reference values."""
+        return evaluate(q, state, self.gamma)
+
+
+def evaluate(
+    q: jax.Array, state: Evaluation.State, gamma: float | jax.Array
+) -> Evaluation.Metrics:
+    """Evaluate with a host-validated scalar discount, including mapped discounts."""
+    chex.assert_equal_shape([q, state.reference])
+    chex.assert_rank(gamma, 0)
+    target = _bellman_q(state.mdp, q, gamma)
+    value = _policy_v(state.mdp, greedy_policy(q), gamma)
+    policy_return = state.mdp.initial @ value
+    optimum = state.mdp.initial @ jnp.max(state.reference, axis=0)
+    return Evaluation.Metrics(
+        bellman_linf=jnp.max(jnp.abs(target - q)),
+        value_linf=jnp.max(jnp.abs(q - state.reference)),
+        policy_return=policy_return,
+        policy_gap=optimum - policy_return,
+    )

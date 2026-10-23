@@ -1,4 +1,4 @@
-"""Asynchronous Q-learning with the paper's global-clock schedule."""
+"""Asynchronous Q-learning with a global power-law step schedule."""
 
 from __future__ import annotations
 
@@ -26,7 +26,8 @@ class QLearning:
 
     The global-clock schedule is ``alpha_k = (1 + k / k0)**(-eta)``.
     The first sample has ``k = 0``. Exponents at or below one half are
-    permitted for finite-budget experiments, not as a convergence guarantee.
+    permitted for finite-budget experiments; convergence requires a separate
+    analysis of the schedule and MDP.
 
     Required protocols::
 
@@ -45,6 +46,7 @@ class QLearning:
     Public methods:
         init: Initialize from an explicitly supplied Q-table.
         update: Update the sampled state-action entry.
+        update_with: Apply the same recurrence with scalar array parameters.
     """
 
     n_states: int
@@ -77,7 +79,7 @@ class QLearning:
             raise ValueError("k0 must be finite and positive")
 
     def init(self, q: jax.Array) -> QLearning.State:
-        """Initialize the global clock without changing the supplied Q-table."""
+        """Initialize a zero global clock and the supplied Q-table."""
         chex.assert_shape(q, (self.n_actions, self.n_states))
         if not jnp.issubdtype(q.dtype, jnp.floating):
             raise ValueError("q must have floating-point dtype")
@@ -85,22 +87,52 @@ class QLearning:
 
     def update(self, transition: Transition, state: QLearning.State) -> QLearning.State:
         """Consume a scalar continuing transition and advance the global clock."""
+        return self.update_with(transition, state, self.gamma, self.eta, self.k0)
+
+    def update_with(
+        self,
+        transition: Transition,
+        state: QLearning.State,
+        gamma: float | jax.Array,
+        eta: float | jax.Array,
+        k0: float | jax.Array,
+    ) -> QLearning.State:
+        """Apply the recurrence with host-validated, potentially mapped parameters."""
         chex.assert_shape(state.q, (self.n_actions, self.n_states))
-        chex.assert_rank(
-            [
-                transition.obs,
-                transition.act,
-                transition.rew,
-                transition.nobs,
-                state.step,
-            ],
-            0,
-        )
-        alpha = (1 + state.step.astype(state.q.dtype) / self.k0) ** (-self.eta)
-        delta = (
-            transition.rew.astype(state.q.dtype)
-            + self.gamma * jnp.max(state.q[:, transition.nobs])
-            - state.q[transition.act, transition.obs]
-        )
-        q = state.q.at[transition.act, transition.obs].add(alpha * delta)
-        return self.State(q=q, step=state.step + 1)
+        return update(transition, state, gamma, eta, k0)
+
+
+def update(
+    transition: Transition,
+    state: QLearning.State,
+    gamma: float | jax.Array,
+    eta: float | jax.Array,
+    k0: float | jax.Array,
+) -> QLearning.State:
+    """Apply the same recurrence with scalar, potentially mapped parameters.
+
+    Parameter values must be validated on the host before tracing. This kernel
+    is shared by the static component and flat configuration-batch experiments.
+    """
+    chex.assert_rank(state.q, 2)
+    chex.assert_rank(
+        [
+            transition.obs,
+            transition.act,
+            transition.rew,
+            transition.nobs,
+            state.step,
+            gamma,
+            eta,
+            k0,
+        ],
+        0,
+    )
+    alpha = (1 + state.step.astype(state.q.dtype) / k0) ** (-eta)
+    delta = (
+        transition.rew.astype(state.q.dtype)
+        + gamma * jnp.max(state.q[:, transition.nobs])
+        - state.q[transition.act, transition.obs]
+    )
+    q = state.q.at[transition.act, transition.obs].add(alpha * delta)
+    return QLearning.State(q=q, step=state.step + 1)

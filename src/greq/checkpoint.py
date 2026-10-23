@@ -53,8 +53,8 @@ def save[S](path: Path, state: S) -> None:
 def load[S](path: Path, template: S) -> S:
     """Restore a state using an independently constructed, schema-matching template.
 
-    The caller must also match the component settings to the saved run config;
-    settings are deliberately not part of dynamic state.
+    The caller must match the component settings to the saved run config.
+    These settings are supplied separately from the dynamic state.
     """
     expected = _payload(template)
     template_leaves, structure = jax.tree.flatten(template)

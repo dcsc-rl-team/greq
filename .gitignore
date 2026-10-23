@@ -9,4 +9,5 @@ build/
 dist/
 *.egg-info/
 runs/
+research/
 .DS_Store

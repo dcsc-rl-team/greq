@@ -1,4 +1,4 @@
-"""Use float64 for numerical correctness checks without changing library defaults."""
+"""Configure float64 for numerical correctness checks."""
 
 from __future__ import annotations
 

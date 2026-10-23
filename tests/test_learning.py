@@ -31,9 +31,19 @@ def sample(s=0, a=0, r=1.0, next_s=0) -> Sample:
 
 
 @pytest.mark.parametrize("gamma", [0.1, 0.9, 0.99, 0.999])
-def test_greq_matches_direct_solve_after_every_update(gamma):
+@pytest.mark.parametrize("beta_scale", [0.05, 0.3, 1.0])
+@pytest.mark.parametrize("beta_offset", [0.0, 1.5, 10.0])
+def test_greq_matches_direct_solve_after_every_update(gamma, beta_scale, beta_offset):
     """Compare both q and gain with an independent dense NumPy oracle."""
-    agent = Greq(n_states=3, n_actions=2, gamma=gamma, eta=0.9, rho=0.6)
+    agent = Greq(
+        n_states=3,
+        n_actions=2,
+        gamma=gamma,
+        eta=0.9,
+        rho=0.6,
+        beta_scale=beta_scale,
+        beta_offset=beta_offset,
+    )
     rng = np.random.default_rng(6)
     q = rng.normal(size=(2, 3))
     model = np.zeros((6, 6))
@@ -49,13 +59,12 @@ def test_greq_matches_direct_solve_after_every_update(gamma):
         j = action * 3 + next_s
         counts[a, s] += 1
         alpha = float(counts[a, s]) ** -agent.eta
-        beta = float(counts[a, s]) ** -agent.rho
-        gain = np.linalg.solve(np.eye(6) - gamma * model, np.eye(6))
+        beta = beta_scale * (float(counts[a, s]) + beta_offset) ** -agent.rho
         delta = reward + gamma * q[action, next_s] - q[a, s]
-        q = q + (alpha * delta * gain[:, i]).reshape(q.shape)
         model[i] = (1 - beta) * model[i] + beta * np.eye(6)[j]
-        state = update(sample(s, a, reward, next_s), state)
         expected_gain = np.linalg.solve(np.eye(6) - gamma * model, np.eye(6))
+        q = q + (alpha * delta * expected_gain[:, i]).reshape(q.shape)
+        state = update(sample(s, a, reward, next_s), state)
         np.testing.assert_allclose(state.q, q, rtol=2e-8, atol=2e-8)
         np.testing.assert_allclose(state.gain, expected_gain, rtol=2e-8, atol=2e-8)
         np.testing.assert_allclose(state.model, model, rtol=1e-13, atol=1e-13)
@@ -65,17 +74,86 @@ def test_greq_matches_direct_solve_after_every_update(gamma):
         assert np.max(np.sum(np.abs(state.gain), axis=1)) <= 1 / (1 - gamma) + 1e-7
 
 
-def test_first_update_uses_old_gain_and_incremented_count():
-    """A one-state self-loop separates old-gain from new-gain algorithms."""
+def test_first_update_uses_updated_gain_and_incremented_count():
+    """A one-state self-loop uses the current transition in its gain."""
     agent = Greq(n_states=1, n_actions=1, gamma=0.9)
     before = agent.init(jnp.zeros((1, 1)))
     after = agent.update(sample(r=2), before)
-    np.testing.assert_array_equal(after.q, [[2]])
+    np.testing.assert_allclose(after.q, [[20]])
     np.testing.assert_array_equal(after.model, [[1]])
     np.testing.assert_allclose(after.gain, [[10]])
     np.testing.assert_array_equal(after.visits, [[1]])
     np.testing.assert_array_equal(before.q, [[0]])
     np.testing.assert_array_equal(before.model, [[0]])
+
+
+@pytest.mark.parametrize("beta_scale", [0.01, 0.1, 0.5, 1.0])
+def test_gain_step_multiplier_updates_gain_before_q(beta_scale):
+    agent = Greq(n_states=1, n_actions=1, gamma=0.999, beta_scale=beta_scale)
+    before = agent.init(jnp.zeros((1, 1)))
+    after = jax.jit(agent.update)(sample(r=2), before)
+    np.testing.assert_array_equal(before.gain, [[1]])
+    np.testing.assert_allclose(after.q, [[2 / (1 - 0.999 * beta_scale)]])
+    np.testing.assert_allclose(after.model, [[beta_scale]])
+    np.testing.assert_allclose(after.gain, [[1 / (1 - 0.999 * beta_scale)]])
+
+
+@pytest.mark.parametrize("beta_scale", [0, -0.1, 1.01, float("inf"), float("nan")])
+def test_invalid_gain_step_multiplier(beta_scale):
+    with pytest.raises(ValueError, match="beta_scale"):
+        Greq(n_states=1, n_actions=1, gamma=0.9, beta_scale=beta_scale)
+
+
+@pytest.mark.parametrize("offset", [0, 1, 10, 100])
+def test_offset_changes_only_the_model_clock(offset):
+    agent = Greq(
+        n_states=1,
+        n_actions=1,
+        gamma=0.999,
+        rho=0.6,
+        beta_offset=offset,
+    )
+    before = agent.init(jnp.zeros((1, 1)))
+    after = jax.jit(agent.update)(sample(r=2), before)
+    beta = (1 + offset) ** -0.6
+    np.testing.assert_array_equal(before.gain, [[1]])
+    np.testing.assert_array_equal(before.visits, [[0]])
+    np.testing.assert_array_equal(after.visits, [[1]])
+    np.testing.assert_allclose(after.q, [[2 / (1 - 0.999 * beta)]])
+    np.testing.assert_allclose(after.model, [[beta]])
+    np.testing.assert_allclose(after.gain, [[1 / (1 - 0.999 * beta)]])
+
+
+@pytest.mark.parametrize("offset", [-1, float("inf"), float("nan")])
+def test_invalid_model_clock_offset(offset):
+    with pytest.raises(ValueError, match="beta_offset"):
+        Greq(n_states=1, n_actions=1, gamma=0.9, beta_offset=offset)
+
+
+def test_jit_self_loop_uses_current_transition_gain():
+    agent = Greq(n_states=1, n_actions=1, gamma=0.9)
+    after = jax.jit(agent.update)(sample(r=2), agent.init(jnp.zeros((1, 1))))
+    np.testing.assert_allclose(after.q, [[20]])
+    np.testing.assert_allclose(after.gain, [[10]])
+
+
+def test_gain_response_when_a_transition_leaves_a_self_loop():
+    agent = Greq(n_states=2, n_actions=1, gamma=0.999, eta=0.7, rho=0.6)
+    before = replace(
+        agent.init(jnp.zeros((1, 2))),
+        model=jnp.diag(jnp.array([1.0, 0.0])),
+        gain=jnp.diag(jnp.array([1 / (1 - agent.gamma), 1.0])),
+        visits=jnp.array([[1, 0]], dtype=jnp.int32),
+    )
+    transition = sample(s=0, next_s=1, r=1)
+    updated = agent.update(transition, before)
+    alpha, beta = 2 ** (-0.7), 2 ** (-0.6)
+    z = 1 / (1 - agent.gamma)
+    np.testing.assert_allclose(
+        1 - updated.q[0, 0], 1 - alpha * z / (1 - beta + beta * z)
+    )
+    assert 1 - alpha * z < -600
+    assert 0 < float(1 - updated.q[0, 0]) < 0.1
 
 
 def test_ties_and_action_major_indexing():
@@ -102,12 +180,12 @@ def test_local_clock_ignores_unvisited_rows():
     np.testing.assert_array_equal(state.visits, [[4, 1]])
     np.testing.assert_array_equal(state.model[0], before.model[0])
     np.testing.assert_array_equal(state.model[1], [0, 1])
-    assert float(state.q[0, 1]) == 3
+    assert float(state.q[0, 1]) == 6
 
 
 @pytest.mark.parametrize("method", [Greq, QLearning])
 def test_jit_scan_and_vmap_agree(method):
-    """Nested dataclasses transform without filtering or component mutation."""
+    """Eager, compiled, and vectorized updates agree on every state leaf."""
     agent = method(n_states=2, n_actions=2, gamma=0.9)
     transitions = Sample(
         obs=jnp.array([0, 1, 0, 1]),

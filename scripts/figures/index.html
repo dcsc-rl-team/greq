@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GReQ comparisons</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="assets/viz/ui.css">
+  <style>
+    main { max-width: 1152px; }
+    .panel { margin: 16px; }
+    [hidden] { display: none !important; }
+    #notice { margin: 16px; white-space: pre-wrap; }
+    iframe { width: 100%; min-height: 600px; border: 0; }
+    code { white-space: pre-wrap; }
+  </style>
+  <script src="assets/viz/vendor/d3.v7.min.js"></script>
+</head>
+<body>
+<main>
+  <h1>GReQ comparisons</h1>
+  <div class="panel">
+    <label class="field">View<select id="view"><option value="evaluation">Learning curves</option><option value="runtime">Runtime medians</option></select></label>
+    <label class="field">Environment<select id="environment"></select></label>
+    <label class="field">Discount<select id="discount"></select></label>
+    <button id="reload">Reload CSVs</button>
+  </div>
+  <div id="notice" role="status" aria-live="polite">Serve the repository to load CSV reports:
+node scripts/figures/serve.mjs 8002 .
+Then open http://localhost:8002/scripts/figures/</div>
+  <iframe id="figure-page" title="Selected comparison" hidden></iframe>
+</main>
+<script type="module" src="assets/report.mjs"></script>
+</body>
+</html>
