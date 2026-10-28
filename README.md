@@ -10,8 +10,6 @@ We recommend installation via [uv](https://docs.astral.sh/uv/getting-started/ins
 uv sync --locked
 ```
 
-Source distributions include the library, experiment scripts, tests, documentation, and dependency lock. Local `runs/` and `research/` contents and generated documentation HTML are excluded, including when rebuilding outside a Git checkout.
-
 ## Experiments
 
 ```bash
@@ -22,24 +20,6 @@ uv run -m scripts.report    # Evaluate selected settings
 
 Finetuning creates `runs/results/` with results in `tuning.csv`. The report saves the selected settings' evaluation results in `evaluation.csv`.
 
-[NeSA](docs/nesa.md) is available as an optional, per-transition momentum baseline:
-
-```bash
-uv run -m scripts.run --method nesa --output runs/nesa
-uv run -m scripts.report --methods nesa --runtime --output runs/nesa-study
-uv run -m scripts.figures --data runs/nesa-study
-```
-
-NeSA retains the full momentum vector and does not wait for state-action coverage. Its default power-schedule search uses `--nesa-etas`, `--nesa-k0s`, and `--nesa-zetas`. For a separate 24-setting, two-parameter study, select shifted reciprocal steps:
-
-```bash
-uv run -m scripts.report --methods nesa --runtime --output runs/nesa-shifted \
-  --nesa-t0s 1 10 100 1000 3000 10000 --nesa-zetas .03 .1 .3 1
-uv run -m scripts.figures --data runs/nesa-shifted
-```
-
-Only `t0` and `zeta` vary in this mode; the exponent is fixed at one and `k0` is not searched. Both schedules retain the reciprocal/unit-momentum reference point. Default comparisons remain GReQ, QL, Zap, and batched Zap. Include `nesa` alongside those methods in `--methods` to compare them, using a fresh output directory.
-
 **Render**: To render the results run the `figures` script:
 
 ```bash
@@ -49,7 +29,7 @@ uv run -m scripts.figures   # Generate figures
 The script will produce `runs/results/figures.html`, which you can open in a browser.
 This file contains interactive figures and a control panel for exploring the results.
 
-![Learning curves for GReQ, QL, Zap, and batched Zap](docs/example.svg)
+![Learning curves for GReQ, QL, Zap, batched Zap, and NeSA](docs/example.svg)
 
 Above is an example of Garnet MDP with $\gamma = 0.99$.
 Curves show median value error over eleven trajectory seeds and shaded bands span the 25th–75th percentiles.
