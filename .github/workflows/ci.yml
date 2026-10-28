@@ -30,7 +30,36 @@ jobs:
       - run: uv run --locked pytest -q
       - run: node --test tests/test_figures.mjs tests/test_report.mjs
       - run: node --check scripts/figures/export.mjs
-      - run: uv build
+      - name: Bounded source distributions
+        run: |
+          uv build
+          uv run --locked python - <<'PY'
+          import subprocess
+          import tarfile
+          from pathlib import Path, PurePosixPath
+          from tempfile import TemporaryDirectory
+
+          original = next(Path("dist").glob("*.tar.gz")).resolve()
+          with TemporaryDirectory() as temporary:
+              root = Path(temporary)
+              with tarfile.open(original) as archive:
+                  archive.extractall(root, filter="data")
+              source = next(path for path in root.iterdir() if path.is_dir())
+              for name in ("runs/private.csv", "research/private.py", "docs/private.html"):
+                  path = source / name
+                  path.parent.mkdir(parents=True, exist_ok=True)
+                  path.write_text("must not be distributed\n")
+              output = root / "rebuilt"
+              subprocess.run(["uv", "build", str(source), "--out-dir", str(output)], check=True)
+              for path in (original, next(output.glob("*.tar.gz"))):
+                  with tarfile.open(path) as archive:
+                      files = {PurePosixPath(*PurePosixPath(name).parts[1:]) for name in archive.getnames()}
+                  assert not any(path.parts[0] in {"runs", "research", ".venv", "dist"} for path in files)
+                  assert not any(path.parts[0] == "docs" and path.suffix == ".html" for path in files)
+                  required = {"src/greq/__init__.py", "scripts/run.py", "scripts/figures/assets/index.html", "tests/test_learning.py", "docs/example.svg", "README.md", "pyproject.toml", "uv.lock"}
+                  assert required <= {str(path) for path in files}
+                  print(f"Validated {len(files)} source files in {path.name}")
+          PY
       - name: Single configuration
         run: >-
           uv run --locked python -m scripts.run

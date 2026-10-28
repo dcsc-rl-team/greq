@@ -10,6 +10,8 @@ We recommend installation via [uv](https://docs.astral.sh/uv/getting-started/ins
 uv sync --locked
 ```
 
+Source distributions include the library, experiment scripts, tests, documentation, and dependency lock. Local `runs/` and `research/` contents and generated documentation HTML are excluded, including when rebuilding outside a Git checkout.
+
 ## Experiments
 
 ```bash
