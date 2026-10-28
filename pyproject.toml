@@ -28,6 +28,20 @@ jaxdp = { git = "https://github.com/TolgaOk/jaxdp", rev = "70955c262287523bd8ff2
 [tool.hatch.build.targets.wheel]
 packages = ["src/greq"]
 
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "src",
+    "scripts",
+    "tests",
+    "docs",
+    "README.md",
+    "pyproject.toml",
+    "uv.lock",
+    ".python-version",
+    ".github/workflows/ci.yml",
+]
+exclude = ["**/__pycache__/**", "**/*.py[cod]", "/docs/**/*.html"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

@@ -144,7 +144,7 @@ def runtime_inputs():
     paths = []
     for environment in ("garnet", "graph"):
         for gamma in (0.95, 0.99):
-            for method in ("greq", "ql", "zap", "zap-batched"):
+            for method in ("greq", "ql", "nesa", "zap", "zap-batched"):
                 directory = Path(f"runs/{environment}/{gamma}/{method}")
                 path = write_csv(
                     directory,
@@ -176,7 +176,7 @@ def test_runtime_facets_allow_different_environments_and_discounts(
     paths = runtime_inputs()
     result = build(Config(csvs=paths, kind="runtime"))
     manifest = json.loads((result / "data/manifest.json").read_text())
-    assert manifest["kind"] == "runtime" and len(manifest["runs"]) == 16
+    assert manifest["kind"] == "runtime" and len(manifest["runs"]) == 20
     assert {r["gamma"] for r in manifest["runs"]} == {0.95, 0.99}
     assert {r["environment"] for r in manifest["runs"]} == {
         "Garnet (6×6)",
@@ -262,7 +262,7 @@ def test_runtime_seed_replicates_require_matched_sets_and_settings(
     else:
         result = build(Config(csvs=tuple(paths), kind="runtime"))
         manifest = json.loads((result / "data/manifest.json").read_text())
-        assert len(manifest["runs"]) == 48
+        assert len(manifest["runs"]) == 60
         assert {run["seed"] for run in manifest["runs"]} == {3, 4, 5}
 
 

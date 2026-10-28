@@ -43,7 +43,7 @@ function interpolate(points, x) {
 }
 
 function paletteSlots(labels) {
-  const slots = new Map([['GReQ', 1], ['QL', 0], ['Zap', 2], ['Zap-batched', 3]].filter(([name]) => labels.includes(name)));
+  const slots = new Map([['GReQ', 1], ['QL', 0], ['Zap', 2], ['Zap-batched', 3], ['NeSA', 5]].filter(([name]) => labels.includes(name)));
   for (const name of [...labels].sort()) {
     if (!slots.has(name)) slots.set(name, [0, 1, 2, 3, 4, 5].find(slot => ![...slots.values()].includes(slot)));
   }
@@ -111,7 +111,7 @@ async function mountRuntime(manifest, runs) {
   const environments = [...new Set(points.map(p => p.environment))];
   const gammas = [...new Set(points.map(p => p.gamma))].sort((a, b) => a - b);
   const methods = [...new Set(points.map(p => p.method))].sort((a, b) => {
-    const order = ['GReQ', 'QL', 'Zap', 'Zap-batched'];
+    const order = ['GReQ', 'QL', 'NeSA', 'Zap', 'Zap-batched'];
     return order.indexOf(a) - order.indexOf(b);
   });
   const slots = paletteSlots(methods);

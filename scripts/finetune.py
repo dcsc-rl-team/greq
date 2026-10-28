@@ -160,6 +160,8 @@ class Row:
     value_linf: float | None
     policy_return: float | None
     policy_gap: float | None
+    zeta: float | None = None  # NeSA only; absent in legacy CSV schemas.
+    t0: float | None = None  # Shifted NeSA only; never stored as k0.
 
     @property
     def cell(self) -> tuple[str, str, float]:
@@ -167,15 +169,23 @@ class Row:
         return self.environment, self.method, self.gamma
 
     @property
-    def setting(self) -> tuple[float, float, float, int]:
-        """Return a lexicographic key of hyperparameter values."""
-        return self.eta, self.rho or 0.0, self.k0 or 0.0, self.batch_size or 0
+    def setting(self) -> tuple[float, float, float, int, float, float]:
+        """Return a lexicographic key including NeSA's momentum multiplier."""
+        return (
+            self.eta,
+            self.rho or 0.0,
+            self.k0 or 0.0,
+            self.batch_size or 0,
+            self.t0 or 0.0,
+            self.zeta or 0.0,
+        )
 
     def __post_init__(self) -> None:
         """Reject malformed identities and incomplete successful observations."""
         if self.environment not in ("garnet", "graph") or self.method not in (
             "greq",
             "ql",
+            "nesa",
             "zap",
             "zap-batched",
         ):
@@ -184,15 +194,29 @@ class Row:
             raise ValueError("invalid observation status")
         if not 0 < self.gamma < 1 or self.eta <= 0:
             raise ValueError("invalid discount or learning exponent")
-        if self.method == "ql":
+        if self.t0 is not None:
+            if (
+                self.method != "nesa"
+                or self.t0 <= 0
+                or self.eta != 1
+                or self.k0 is not None
+                or self.rho is not None
+            ):
+                raise ValueError("shifted NeSA requires positive t0, eta=1, no k0/rho")
+        elif self.method in ("ql", "nesa"):
             if self.k0 is None or self.k0 <= 0 or self.rho is not None:
-                raise ValueError("QL requires k0 and no rho")
+                raise ValueError("QL and NeSA require k0 and no rho")
         elif (
             self.rho is None
             or not 0.5 < self.rho < self.eta <= 1
             or self.k0 is not None
         ):
             raise ValueError("matrix methods require 1/2 < rho < eta <= 1")
+        if self.method == "nesa":
+            if self.zeta is None or self.zeta <= 0:
+                raise ValueError("NeSA requires a positive finite zeta")
+        elif self.zeta is not None:
+            raise ValueError("only NeSA accepts zeta")
         if (self.method == "zap-batched") != (self.batch_size is not None):
             raise ValueError("only batched Zap requires a batch size")
         if self.batch_size is not None and self.batch_size < 1:
@@ -250,7 +274,8 @@ def read_rows(path: Path) -> tuple[Row, ...]:
     result = []
     with path.open(newline="", encoding="utf-8") as file:
         reader = csv.DictReader(file)
-        if reader.fieldnames != [f.name for f in fields(Row)]:
+        names = [f.name for f in fields(Row)]
+        if reader.fieldnames not in (names, names[:-1], names[:-2]):
             raise ValueError(f"unsupported CSV schema: {path}")
         for r in reader:
             result.append(
@@ -278,6 +303,8 @@ def read_rows(path: Path) -> tuple[Row, ...]:
                     value_linf=_optional(r["value_linf"]),
                     policy_return=_optional(r["policy_return"]),
                     policy_gap=_optional(r["policy_gap"]),
+                    zeta=_optional(r.get("zeta", "")),
+                    t0=_optional(r.get("t0", "")),
                 )
             )
     identities = {(r.cell, r.setting, r.seed, r.step) for r in result}
@@ -330,25 +357,36 @@ def validate_table(
     gammas: np.ndarray,
     method: str = "ql",
 ) -> None:
-    """Validate H×4 rows; the fourth column is k0 for QL, rho otherwise."""
-    if method not in ("ql", "greq", "zap", "zap-batched"):
+    """Validate legacy rows or shifted NeSA (seed,gamma,1,1,zeta,t0)."""
+    if method not in ("ql", "nesa", "greq", "zap", "zap-batched"):
         raise ValueError("unknown method")
-    if table.ndim != 2 or table.shape[1] != 4 or len(table) == 0:
-        raise ValueError("expected a nonempty H×4 table: seed, gamma, eta, k0/rho")
+    width = 5 if method == "nesa" else 4
+    widths = (5, 6) if method == "nesa" else (width,)
+    if table.ndim != 2 or table.shape[1] not in widths or len(table) == 0:
+        raise ValueError(
+            f"expected a nonempty H×{width} parameter table (6 if shifted)"
+        )
     if table.dtype != np.float64 or not np.isfinite(table).all():
         raise ValueError(
             "require finite float64 rows to preserve uint32 seed precision"
         )
-    seeds, discounts, etas, other = table.T
+    seeds, discounts, etas, other = table[:, :4].T
     if np.any((seeds < 0) | (seeds > 2**32 - 1) | (seeds != np.floor(seeds))):
         raise ValueError("seeds must be uint32 integers")
     if np.any((discounts <= 0) | (discounts >= 1)):
         raise ValueError("discounts must lie in (0, 1)")
     if not np.isin(discounts, gammas).all():
         raise ValueError("every discount needs a certified reference")
-    if method == "ql":
+    if method in ("ql", "nesa"):
         if np.any(etas <= 0) or np.any(other <= 0):
             raise ValueError("eta and k0 must be positive")
+        if method == "nesa" and np.any(table[:, 4] <= 0):
+            raise ValueError("zeta must be positive")
+        if method == "nesa" and table.shape[1] == 6:
+            if np.any(etas != 1) or np.any(other != 1):
+                raise ValueError("shifted NeSA fixes eta and k0 to one")
+            if np.any(table[:, 5] <= 0):
+                raise ValueError("t0 must be positive")
     elif np.any((other <= 0.5) | (other >= etas) | (etas > 1)):
         raise ValueError("matrix-gain exponents must satisfy 1/2 < rho < eta <= 1")
     if len(np.unique(table, axis=0)) != len(table):
@@ -361,7 +399,7 @@ class Config:
 
     output: Path = Path("runs/results")
     environments: tuple[Literal["garnet", "graph"], ...] = ("garnet", "graph")
-    methods: tuple[Literal["greq", "ql", "zap", "zap-batched"], ...] = (
+    methods: tuple[Literal["greq", "ql", "nesa", "zap", "zap-batched"], ...] = (
         "greq",
         "ql",
         "zap",
@@ -374,6 +412,11 @@ class Config:
     rhos: tuple[float, ...] = (0.9, 0.8, 0.7, 0.6, 0.8, 0.7, 0.6, 0.7, 0.6, 0.6)
     ql_etas: tuple[float, ...] = (0.6, 0.5, 0.4, 0.3, 0.2, 0.1)
     ql_k0s: tuple[float, ...] = (1, 10, 100, 1000)
+    # 24 NeSA settings, including the source point eta=k0=zeta=1.
+    nesa_etas: tuple[float, ...] = (1.0, 0.8, 0.6)
+    nesa_k0s: tuple[float, ...] = (1.0, 10.0)
+    nesa_zetas: tuple[float, ...] = (1.0, 0.75, 0.5, 0.25)
+    nesa_t0s: tuple[float, ...] = ()  # Nonempty selects only a t0/zeta search.
     n_states: int = 50  # Garnet states; Graph retains its fixed representation.
     n_actions: int = 5
     branching: int = 5
@@ -411,7 +454,7 @@ class Config:
     def config(
         self,
         environment: Literal["garnet", "graph"],
-        method: Literal["greq", "ql", "zap", "zap-batched"],
+        method: Literal["greq", "ql", "nesa", "zap", "zap-batched"],
         phase: str,
     ) -> RunConfig:
         """Configure one static environment/algorithm group."""
@@ -425,27 +468,41 @@ class Config:
             env_seed=self.env_seed,
             n_steps=self.n_steps,
             eval_every=self.eval_every,
+            t0=self.nesa_t0s[0] if method == "nesa" and self.nesa_t0s else None,
             batch_size=(36 if environment == "graph" else 770)
             if method == "zap-batched"
             else None,
         )
 
     def table(self, method: str) -> np.ndarray:
-        """Construct an H×4 table with one row per seed and parameter setting."""
-        pairs = (
-            tuple(itertools.product(self.ql_etas, self.ql_k0s))
-            if method == "ql"
-            else tuple(zip(self.etas, self.rhos, strict=True))
-        )
+        """Construct scalar configurations; shifted NeSA tunes only t0 and zeta."""
+        if method == "nesa" and self.nesa_t0s:
+            return np.asarray(
+                [
+                    (seed, gamma, 1, 1, zeta, t0)
+                    for gamma in self.gammas
+                    for t0, zeta in itertools.product(self.nesa_t0s, self.nesa_zetas)
+                    for seed in self.selection_seeds
+                ],
+                dtype=np.float64,
+            ).reshape(-1, 6)
+        if method == "nesa":
+            settings = tuple(
+                itertools.product(self.nesa_etas, self.nesa_k0s, self.nesa_zetas)
+            )
+        elif method == "ql":
+            settings = tuple(itertools.product(self.ql_etas, self.ql_k0s))
+        else:
+            settings = tuple(zip(self.etas, self.rhos, strict=True))
         return np.asarray(
             [
-                (seed, gamma, eta, other)
+                (seed, gamma, *setting)
                 for gamma in self.gammas
-                for eta, other in pairs
+                for setting in settings
                 for seed in self.selection_seeds
             ],
             dtype=np.float64,
-        ).reshape(-1, 4)
+        ).reshape(-1, 5 if method == "nesa" else 4)
 
 
 def request(study: Config, phase: str) -> dict:
@@ -479,7 +536,19 @@ def request(study: Config, phase: str) -> dict:
             },
         },
         "selection": "median final value_linf; all selection seeds finite; "
-        "ties by eta,rho,k0,batch_size",
+        "ties by eta,rho,k0,batch_size,t0,zeta",
+        "tuned_parameters": {
+            method: (
+                ["t0", "zeta"]
+                if method == "nesa" and study.nesa_t0s
+                else ["eta", "k0", "zeta"]
+                if method == "nesa"
+                else ["eta", "k0"]
+                if method == "ql"
+                else ["eta", "rho"]
+            )
+            for method in study.methods
+        },
         "kernels": {
             str(p.relative_to(source)): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in files
@@ -510,8 +579,10 @@ def observation(
         eval_every=cfg.eval_every,
         gamma=float(row[1]),
         eta=float(row[2]),
-        rho=float(row[3]) if cfg.method != "ql" else None,
-        k0=float(row[3]) if cfg.method == "ql" else None,
+        rho=float(row[3]) if cfg.method not in ("ql", "nesa") else None,
+        k0=float(row[3]) if cfg.method in ("ql", "nesa") and len(row) < 6 else None,
+        zeta=float(row[4]) if cfg.method == "nesa" else None,
+        t0=float(row[5]) if cfg.method == "nesa" and len(row) == 6 else None,
         batch_size=(cfg.batch_size or cfg.n_states * cfg.n_actions)
         if cfg.method == "zap-batched"
         else None,
@@ -672,7 +743,9 @@ def validate_tuning(study: Config, rows: tuple[Row, ...]) -> None:
             r.seed,
             r.gamma,
             r.eta,
-            r.k0 if r.method == "ql" else r.rho,
+            1 if r.t0 is not None else r.k0 if r.method in ("ql", "nesa") else r.rho,
+            *((r.zeta,) if r.method == "nesa" else ()),
+            *((r.t0,) if r.t0 is not None else ()),
         )
         for r in rows
     }

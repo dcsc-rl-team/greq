@@ -49,7 +49,13 @@ if (manifest.kind === 'runtime') {
   }
   for (const axis of document.querySelectorAll('.x-axis')) {
     const ticks = [...axis.querySelectorAll('.tick')];
-    check(ticks.every(t => t.__data__ > 0 && Math.abs(Math.log10(t.__data__) - Math.round(Math.log10(t.__data__))) < 1e-8), 'Runtime axis is not logarithmic with decade ticks');
+    check(ticks.length >= 2 && ticks.every(t => t.__data__ > 0 && t.querySelector('text').textContent.trim()), 'Runtime log ticks must be positive and labelled');
+    const firstLog = Math.log10(ticks[0].__data__), lastLog = Math.log10(ticks.at(-1).__data__);
+    const position = tick => tick.transform.baseVal.consolidate().matrix.e;
+    const firstX = position(ticks[0]), lastX = position(ticks.at(-1));
+    for (const tick of ticks) check(Math.abs((position(tick) - firstX) / (lastX - firstX) - (Math.log10(tick.__data__) - firstLog) / (lastLog - firstLog)) < 1e-6, 'Runtime tick positions are not logarithmic');
+    // fig.mjs intentionally uses labelled non-decade ticks below 1.5 decades.
+    if (lastLog - firstLog >= 1.5) check(ticks.every(t => Math.abs(Math.log10(t.__data__) - Math.round(Math.log10(t.__data__))) < 1e-8), 'Wide runtime axes must use decade ticks');
     const boxes = ticks.map(t => t.querySelector('text').getBoundingClientRect()).sort((a, b) => a.left - b.left);
     for (let i = 1; i < boxes.length; i++) check(boxes[i].left >= boxes[i - 1].right - 1, 'Overlapping runtime ticks');
   }
@@ -78,6 +84,11 @@ const heading = document.querySelector('#figure-title');
 check(heading.textContent === (manifest.title ?? ''), 'Wrong figure title');
 check(heading.hidden === !manifest.title, 'Incorrect title visibility');
 check(!document.querySelector('.seed'), 'Expected aggregated curves only');
+const expectedMethods = [...new Set(manifest.runs.map(run => run.label))].sort();
+for (const plot of document.querySelectorAll('.fig')) {
+  const actualMethods = [...plot.querySelectorAll('[data-series]')].map(group => group.dataset.series).sort();
+  check(JSON.stringify(actualMethods) === JSON.stringify(expectedMethods), 'Missing or duplicate algorithm curves');
+}
 check(document.querySelectorAll('#controls input[role="switch"]').length === 2, 'Missing axis switches');
 check(document.querySelectorAll('#controls select').length === 1, 'Unexpected dropdown');
 check(JSON.stringify([...document.querySelectorAll('#theme input')].map(input => input.value)) === JSON.stringify(['focus', 'gray', 'colorblind', 'raspberry', 'cobalt']), 'Unexpected palette choices');
