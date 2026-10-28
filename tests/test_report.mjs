@@ -27,6 +27,16 @@ test('NeSA reports retain momentum settings for learning and scalar runtime', ()
   assert.throws(() => parseReport([record(3, 0, { zeta: '.5' })]));
 });
 
+test('shifted NeSA reports require an explicit offset and fixed decay', () => {
+  const shifted = curves().map(r => ({ ...r, method: 'nesa', rho: '', k0: '', zeta: '.1', t0: '100' }));
+  assert.equal(groupReport(parseReport(shifted), 'evaluation').length, 11);
+  for (const changes of [{ t0: '' }, { t0: '0' }, { t0: 'NaN' }, { eta: '.8' }, { k0: '1' }]) {
+    assert.throws(() => parseReport(shifted.map(r => ({ ...r, ...changes }))));
+  }
+  assert.throws(() => groupReport(parseReport(shifted.map((r, i) => i ? r : { ...r, t0: '1000' })), 'evaluation'));
+  assert.throws(() => parseReport([record(3, 0, { t0: '100' })]));
+});
+
 test('dashboard rejects failed, incomplete, duplicate, or mixed-setting curves', () => {
   const rows = curves();
   for (const bad of [rows.slice(1), [...rows, rows[0]], rows.map((r, i) => i ? r : { ...r, status: 'failed' }), rows.map((r, i) => i ? r : { ...r, eta: '.9' })]) {

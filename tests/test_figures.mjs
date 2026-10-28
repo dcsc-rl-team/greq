@@ -49,10 +49,10 @@ test('GReQ owns the primary palette slot independently of input order', () => {
   assert.deepEqual(Object.fromEntries(groups.map(g => [g.key, g.slot])), { Zap: 2, QL: 0, GReQ: 1, 'Zap-batched': 3 });
 });
 
-test('NeSA and archived SQL keep stable slots without changing existing colors', () => {
-  const names = ['NeSA', 'SQL', 'Zap', 'QL', 'GReQ', 'Zap-batched'];
+test('NeSA keeps its stable slot without changing existing colors', () => {
+  const names = ['NeSA', 'Zap', 'QL', 'GReQ', 'Zap-batched'];
   const groups = summarize(names.map(name => run(name, [{ step: 0, time: 0, loss: 1 }])), 'loss', 'step');
-  assert.deepEqual(Object.fromEntries(groups.map(g => [g.key, g.slot])), { NeSA: 5, SQL: 4, Zap: 2, QL: 0, GReQ: 1, 'Zap-batched': 3 });
+  assert.deepEqual(Object.fromEntries(groups.map(g => [g.key, g.slot])), { NeSA: 5, Zap: 2, QL: 0, GReQ: 1, 'Zap-batched': 3 });
 });
 
 test('single CSV has a degenerate percentile band', () => {

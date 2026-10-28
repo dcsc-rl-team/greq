@@ -30,7 +30,15 @@ uv run -m scripts.report --methods nesa --runtime --output runs/nesa-study
 uv run -m scripts.figures --data runs/nesa-study
 ```
 
-NeSA retains the full momentum vector and does not wait for state-action coverage. Its 24-setting search includes the reciprocal-step, unit-momentum reference setting and tunes decay, scale, and momentum with `--nesa-etas`, `--nesa-k0s`, and `--nesa-zetas`. Default comparisons remain GReQ, QL, Zap, and batched Zap. Include `nesa` alongside those methods in `--methods` to compare them, using a fresh output directory.
+NeSA retains the full momentum vector and does not wait for state-action coverage. Its default power-schedule search uses `--nesa-etas`, `--nesa-k0s`, and `--nesa-zetas`. For a separate 24-setting, two-parameter study, select shifted reciprocal steps:
+
+```bash
+uv run -m scripts.report --methods nesa --runtime --output runs/nesa-shifted \
+  --nesa-t0s 1 10 100 1000 3000 10000 --nesa-zetas .03 .1 .3 1
+uv run -m scripts.figures --data runs/nesa-shifted
+```
+
+Only `t0` and `zeta` vary in this mode; the exponent is fixed at one and `k0` is not searched. Both schedules retain the reciprocal/unit-momentum reference point. Default comparisons remain GReQ, QL, Zap, and batched Zap. Include `nesa` alongside those methods in `--methods` to compare them, using a fresh output directory.
 
 **Render**: To render the results run the `figures` script:
 

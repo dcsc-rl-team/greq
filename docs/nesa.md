@@ -36,10 +36,33 @@ uv run -m scripts.figures --data runs/nesa-study
 
 - NeSA is opt-in; default method lists and other algorithms' grids are unchanged. Include `nesa` alongside other methods with `--methods`, using a fresh output directory.
 - The default grid has 24 candidates: $\eta\in\{1,0.8,0.6\}$, $k_0\in\{1,10\}$, and $\zeta\in\{1,0.75,0.5,0.25\}$. It includes the reciprocal/unit-momentum reference setting. The flags are `--nesa-etas`, `--nesa-k0s`, and `--nesa-zetas`.
-- NeSA parameter rows are `(seed, gamma, eta, k0, zeta)`. Other methods retain four-column rows. CSVs append a dedicated `zeta` column, blank for other methods; readers also accept the older schema without that column. Momentum is never mislabeled as `rho` or `k0`.
+- Power-schedule NeSA parameter rows are `(seed, gamma, eta, k0, zeta)`. Other methods retain four-column rows. CSVs have dedicated optional `zeta` and `t0` columns; readers also accept both older schemas. Momentum and the shifted offset are never mislabeled as `rho` or `k0`.
 - Selection minimizes median final `value_linf` on seeds 0–2 and requires every selection seed to finish finitely. Ties break by ascending parameter values. Winners are frozen before evaluation on seeds 3–13. Those evaluation seeds were inspected in previous comparisons and are not a fresh test set for algorithm design.
 - Learning curves use vmapped trajectories; scalar whole-run training times are measured independently. Initialization, compilation, warmup, evaluation, and I/O are excluded from scalar timing.
 - Checkpoints retain the Q-table, full momentum, transition count, parameter row, and sampler state. Evaluation does not reset momentum or consume behavior samples.
+
+## Shifted reciprocal schedule with two tuned parameters
+
+The normalized power schedule always starts at $\alpha_0=1$, even when $k_0$ changes. To control that initial impulse without changing the momentum recurrence, explicitly supply a positive `t0`:
+
+$$
+\alpha_t=\frac{1}{t+t_0}.
+$$
+
+A single run uses `--t0`; this fixes $\eta=k_0=1$ and rejects conflicting values. Larger $t_0$ softens the initial step while retaining the reciprocal tail. Omitting `t0` preserves the original power schedule and its checkpoint format.
+
+```bash
+uv run -m scripts.run --method nesa --t0 100 --zeta .1 --output runs/nesa-shifted-single
+uv run -m scripts.report --methods nesa --runtime --output runs/nesa-shifted \
+  --nesa-t0s 1 10 100 1000 3000 10000 --nesa-zetas .03 .1 .3 1
+uv run -m scripts.figures --data runs/nesa-shifted
+```
+
+A nonempty `--nesa-t0s` selects a grid over **only $t_0$ and $\zeta$**. The normalized-power exponent and scale grids are inactive in this mode. Six offsets and four momentum multipliers give 24 candidates per environment and discount, including $(t_0,\zeta)=(1,1)$. With three selection seeds, two environments, and four discounts, there are 576 selection trials. NeSA's matrix-free update, zero initialization, continuing trajectory, and selection criterion are unchanged.
+
+Shifted rows are `(seed, gamma, 1, 1, zeta, t0)`. The two ones are fixed compatibility fields, not search dimensions. CSVs record `eta=1`, the actual `t0` and `zeta`, and blank `k0`/`rho`. Requests explicitly record the two tuned parameters. The offset is not a reinterpretation of `k0`.
+
+Keep this study separate from the original power-schedule study. The new study has the same candidate count, but it adds to cumulative exploration; it does not erase the first search. Freeze winners using the original 10,000-sample criterion on seeds 0–2. Longer-horizon diagnostics can continue those winning checkpoints without adding configurations or reselecting. Evaluation seeds 3–13 have already been inspected, and cannot be treated as fresh confirmation of the revised schedule design.
 
 ## Scope
 

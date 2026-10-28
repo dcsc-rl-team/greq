@@ -6,19 +6,20 @@ const metrics = [
   { key: 'policy_gap', label: 'Policy gap' },
   { key: 'policy_return', label: 'Policy return' },
 ];
-const numberFields = ['gamma', 'eta', 'rho', 'k0', 'zeta', 'batch_size', 'seed', 'step', 'n_steps', 'eval_every', 'n_states', 'n_actions', 'branching', 'env_seed', 'train_seconds', ...metrics.map(m => m.key)];
+const numberFields = ['gamma', 'eta', 'rho', 'k0', 'zeta', 't0', 'batch_size', 'seed', 'step', 'n_steps', 'eval_every', 'n_states', 'n_actions', 'branching', 'env_seed', 'train_seconds', ...metrics.map(m => m.key)];
 
 export function parseReport(rows) {
   if (!rows.length) throw Error('CSV contains no observations.');
   return rows.map(row => {
-    const r = { zeta: '', ...row }; // Legacy non-NeSA reports omit this column.
+    const r = { zeta: '', t0: '', ...row }; // Optional fields preserve old CSVs.
     for (const key of numberFields) {
       if (!(key in r)) throw Error(`CSV column missing: ${key}`);
       r[key] = r[key] === '' ? null : Number(r[key]);
       if (r[key] !== null && !Number.isFinite(r[key])) throw Error(`Invalid CSV value: ${key}`);
     }
     if (!['graph', 'garnet'].includes(r.environment) || !Object.hasOwn(methods, r.method)) throw Error('Unknown environment or algorithm.');
-    if (r.method === 'nesa' ? !(r.zeta > 0 && r.k0 > 0 && r.eta > 0 && r.rho === null) : r.zeta !== null) throw Error('Invalid NeSA momentum or schedule fields.');
+    const scheduleValid = r.t0 === null ? r.k0 > 0 && r.eta > 0 : r.t0 > 0 && r.eta === 1 && r.k0 === null;
+    if (r.method === 'nesa' ? !(r.zeta > 0 && scheduleValid && r.rho === null) : r.zeta !== null || r.t0 !== null) throw Error('Invalid NeSA momentum or schedule fields.');
     if (!Number.isInteger(r.seed) || r.seed < 0 || r.seed >= 2 ** 32 || !Number.isInteger(r.step) || r.step < 0 || !(r.gamma > 0 && r.gamma < 1)) throw Error('Invalid run identity.');
     if (!['completed', 'failed'].includes(r.status)) throw Error('Invalid run status.');
     if (!['scalar', 'vmap'].includes(r.execution) || (r.train_seconds !== null && r.execution !== 'scalar')) throw Error('Training times require explicitly scalar execution.');
@@ -32,7 +33,7 @@ export function groupReport(rows, kind) {
   for (const row of rows) {
     if (row.status !== 'completed') throw Error('The CSV contains failed runs. Each comparison requires successful observations for every seed.');
     const cell = JSON.stringify([row.environment, row.method, row.gamma]);
-    const setting = JSON.stringify([row.eta, row.rho, row.k0, row.zeta, row.batch_size, row.execution]);
+    const setting = JSON.stringify([row.eta, row.rho, row.k0, row.zeta, row.t0, row.batch_size, row.execution]);
     if (settings.has(cell) && settings.get(cell) !== setting) throw Error('Evaluation mixes hyperparameter settings within a comparison cell.');
     settings.set(cell, setting);
     const identity = JSON.stringify([row.n_states, row.n_actions, row.branching, row.env_seed, row.n_steps, row.eval_every]);
@@ -137,7 +138,7 @@ async function mount() {
         loaded[name] = parseReport(window.d3.csvParse(new TextDecoder().decode(bytes)));
       } catch (error) { missing.push({ name, url, message: error.message }); }
     }
-    const flags = ['environments', 'methods', 'gammas', 'selection_seeds', 'evaluation_seeds', 'etas', 'rhos', 'ql_etas', 'ql_k0s', 'nesa_etas', 'nesa_k0s', 'nesa_zetas', 'n_states', 'n_actions', 'branching', 'env_seed', 'n_steps', 'eval_every'];
+    const flags = ['environments', 'methods', 'gammas', 'selection_seeds', 'evaluation_seeds', 'etas', 'rhos', 'ql_etas', 'ql_k0s', 'nesa_etas', 'nesa_k0s', 'nesa_zetas', 'nesa_t0s', 'n_states', 'n_actions', 'branching', 'env_seed', 'n_steps', 'eval_every'];
     const args = ` --output ${quote(output)}` + flags.filter(k => protocol?.[k] !== undefined).map(k => ` --${k.replaceAll('_', '-')} ${[].concat(protocol[k]).map(quote).join(' ')}`).join('');
     warnings = missing.map(({ name, url, message }) => `${name}.csv is missing or unreadable (${message}).\nExpected: ${url.pathname}\nRun from the repository root:\n${name === 'tuning' ? 'uv run --locked python -m scripts.finetune' : command}${args}${name === 'runtime' ? ' --runtime' : ''}\nFor damaged or mismatched existing files, choose a fresh --output directory.`);
     if (!template) {

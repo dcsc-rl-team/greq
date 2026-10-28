@@ -79,7 +79,6 @@ _LABELS = {
     "greq": "GReQ",
     "ql": "QL",
     "nesa": "NeSA",
-    "sql": "SQL",  # Read-only rendering of archived SQL runs from its own branch.
     "zap": "Zap",
     "zap-batched": "Zap-batched",
 }

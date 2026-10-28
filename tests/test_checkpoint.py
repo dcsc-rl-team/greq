@@ -47,6 +47,7 @@ def composition(method=Greq, block=5, gamma=0.9):
             agent.eta,
             agent.k0 if isinstance(agent, (QLearning, NeSA)) else agent.rho,
             *((agent.zeta,) if isinstance(agent, NeSA) else ()),
+            *((agent.t0,) if isinstance(agent, NeSA) and agent.t0 is not None else ()),
         ]
     )
     initial = experiment.init(
@@ -74,6 +75,7 @@ def assert_same(left, right):
         QLearning,
         NeSA,
         partial(NeSA, eta=0.6, k0=10, zeta=0.25),
+        partial(NeSA, t0=100, zeta=0.1),
         partial(Zap, gain=InverseGain()),
         partial(BatchedZap, gain=InverseGain(), batch_size=7),
     ],
@@ -112,7 +114,9 @@ def test_checkpoint_rejects_corrupt_leaf(tmp_path):
         checkpoint.load(path, initial)
 
 
-@pytest.mark.parametrize("method", [Greq, NeSA, partial(NeSA, zeta=0.5)])
+@pytest.mark.parametrize(
+    "method", [Greq, NeSA, partial(NeSA, zeta=0.5), partial(NeSA, t0=100, zeta=0.1)]
+)
 def test_block_boundaries_do_not_reset_chain(method):
     small, first = composition(method, block=5)
     large, second = composition(method, block=10)
@@ -130,6 +134,7 @@ def test_block_boundaries_do_not_reset_chain(method):
         Greq,
         NeSA,
         partial(NeSA, eta=0.6, k0=10, zeta=0.25),
+        partial(NeSA, t0=100, zeta=0.1),
         partial(Zap, gain=InverseGain()),
         partial(BatchedZap, gain=InverseGain(), batch_size=7),
     ],

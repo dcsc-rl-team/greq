@@ -96,3 +96,22 @@ jobs:
           --gammas 0.9 --etas 1 --rhos 0.7 --ql-etas 0.5 --ql-k0s 10
           --nesa-etas 1 --nesa-k0s 1 --nesa-zetas 0.5 1
           --selection-seeds 0 1 --methods greq ql nesa zap zap-batched
+      - name: Shifted reciprocal NeSA
+        run: >-
+          uv run --locked python -m scripts.run --method nesa --t0 100 --zeta 0.1
+          --output runs/checks/ci-shifted-single --n-steps 12 --eval-every 4
+          --n-states 2 --n-actions 2 --branching 2
+      - name: Two-parameter NeSA selection, evaluation and scalar runtime
+        run: >-
+          uv run --locked python -m scripts.report --methods nesa --runtime
+          --output runs/checks/ci-shifted --n-steps 12 --eval-every 4
+          --n-states 2 --n-actions 2 --branching 2 --gammas 0.9
+          --selection-seeds 0 1 --nesa-t0s 1 100 --nesa-zetas 0.1 1
+      - name: Shifted NeSA standalone figures
+        run: uv run --locked python -m scripts.figures --data runs/checks/ci-shifted
+      - name: Shifted NeSA validated reuse
+        run: >-
+          uv run --locked python -m scripts.report --methods nesa --runtime
+          --output runs/checks/ci-shifted --n-steps 12 --eval-every 4
+          --n-states 2 --n-actions 2 --branching 2 --gammas 0.9
+          --selection-seeds 0 1 --nesa-t0s 1 100 --nesa-zetas 0.1 1

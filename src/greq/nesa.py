@@ -42,8 +42,11 @@ class NeSA:
     The sample-clock schedule is alpha = (1 + step / k0)**(-eta), with
     step counting completed transitions. Defaults eta = k0 = zeta = 1
     give alpha = 1/(step+1) and the paper's unit momentum scale. The
-    power schedules are finite-budget choices; the linear analysis does not
-    establish a finite-budget guarantee for nonlinear Markovian Q-learning.
+    power schedules are finite-budget choices. Supplying t0 explicitly selects
+    the shifted reciprocal schedule alpha = 1/(step+t0), with eta = k0 = 1
+    fixed and unused as tuning parameters. It does not reinterpret k0.
+    Neither schedule gives a finite-budget guarantee for nonlinear Markovian
+    Q-learning from the paper's linear analysis.
 
     Source: https://arxiv.org/abs/1809.06277
 
@@ -54,6 +57,7 @@ class NeSA:
         eta: Positive finite sample-clock exponent.
         k0: Positive finite sample-clock scale.
         zeta: Positive finite multiplier of the sampled correction.
+        t0: Optional positive initial denominator for shifted reciprocal steps.
 
     Public dataclasses:
         State: Q-table, full momentum, and completed transition count.
@@ -70,6 +74,7 @@ class NeSA:
     eta: float = 1.0
     k0: float = 1.0
     zeta: float = 1.0
+    t0: float | None = None
 
     @dataclass
     class State:
@@ -95,6 +100,11 @@ class NeSA:
             value = getattr(self, name)
             if not isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be finite and positive")
+        if self.t0 is not None:
+            if not isfinite(self.t0) or self.t0 <= 0:
+                raise ValueError("t0 must be finite and positive")
+            if self.eta != 1 or self.k0 != 1:
+                raise ValueError("shifted NeSA fixes eta and k0 to one")
 
     def init(self, q: jax.Array) -> NeSA.State:
         """Initialize Q_{-1} = Q_0, hence zero parameter increment."""
@@ -110,7 +120,7 @@ class NeSA:
     def update(self, transition: Transition, state: NeSA.State) -> NeSA.State:
         """Advance every momentum coordinate from one sampled transition."""
         return self.update_with(
-            transition, state, self.gamma, self.eta, self.k0, self.zeta
+            transition, state, self.gamma, self.eta, self.k0, self.zeta, self.t0
         )
 
     def update_with(
@@ -121,8 +131,13 @@ class NeSA:
         eta: float | jax.Array,
         k0: float | jax.Array,
         zeta: float | jax.Array | None = None,
+        t0: float | jax.Array | None = None,
     ) -> NeSA.State:
-        """Use mapped parameters; an omitted zeta retains the component setting."""
+        """Use host-validated parameters, retaining omitted component settings.
+
+        A supplied t0 selects shifted reciprocal steps. Mapped callers must
+        validate that eta = k0 = 1 for that schedule before tracing.
+        """
         chex.assert_shape(state.q, (self.n_actions, self.n_states))
         chex.assert_equal_shape([state.q, state.velocity])
         zeta = self.zeta if zeta is None else zeta
@@ -145,7 +160,14 @@ class NeSA:
         )
         a, s = transition.act, transition.obs
         greedy = jnp.argmax(state.q[:, transition.nobs])
-        alpha = (1 + state.step.astype(state.q.dtype) / k0) ** (-eta)
+        t0 = self.t0 if t0 is None else t0
+        if t0 is None:
+            alpha = (1 + state.step.astype(state.q.dtype) / k0) ** (-eta)
+        else:
+            chex.assert_rank(t0, 0)
+            alpha = 1 / (
+                state.step.astype(state.q.dtype) + jnp.asarray(t0, dtype=state.q.dtype)
+            )
         td = (
             transition.rew.astype(state.q.dtype)
             + gamma * state.q[greedy, transition.nobs]

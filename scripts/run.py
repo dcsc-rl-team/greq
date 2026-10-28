@@ -90,6 +90,7 @@ class Config(Environment):
     rho: float = 0.7
     k0: float | None = None  # Sample-clock scale; default 10 for QL, 1 for NeSA.
     zeta: float = 1.0  # NeSA sampled-Jacobian and TD multiplier.
+    t0: float | None = None  # Explicit shifted NeSA: alpha=1/(step+t0).
     batch_size: int | None = None  # Samples per batched-Zap update; default A*S.
     max_gain: float | None = 1e6  # Zap gain bound; None selects raw inversion.
     initial_scale: float = 1.0  # Initial Zap Jacobian scale.
@@ -101,6 +102,11 @@ class Config(Environment):
             raise ValueError("unknown learning method")
         if self.method != "nesa" and self.zeta != 1.0:
             raise ValueError("zeta applies only to NeSA")
+        if self.t0 is not None:
+            if self.method != "nesa":
+                raise ValueError("t0 applies only to NeSA")
+            if self.eta not in (None, 1) or self.k0 not in (None, 1):
+                raise ValueError("shifted NeSA fixes eta and k0 to one")
         if self.batch_size is not None and self.method != "zap-batched":
             raise ValueError("batch_size applies only to zap-batched")
         if not 0 < self.n_steps < 2_147_483_647:
@@ -184,7 +190,7 @@ class Experiment[EnvS, LearnS: LearningState]:
         """Array-only experiment data.
 
         Attributes:
-            row: Seed, discount, eta, rho/k0, plus zeta for NeSA, (4,) or (5,).
+            row: Seed, gamma, eta, rho/k0; NeSA adds zeta and optionally t0.
             sampler: Behavior sampler state.
             learner: Learning state.
             evaluation: MDP arrays and certified reference.
@@ -225,8 +231,8 @@ class Experiment[EnvS, LearnS: LearningState]:
     ) -> Experiment.State[EnvS, LearnS]:
         """Initialize owned data while receiving explicitly initialized children."""
         chex.assert_rank(row, 1)
-        if row.shape[0] not in (4, 5):
-            raise ValueError("parameter rows require four values, or five for NeSA")
+        if row.shape[0] not in (4, 5, 6):
+            raise ValueError("parameter rows require four, five or six values")
         return self.State(
             row=row,
             sampler=sampler,
@@ -321,6 +327,10 @@ def _bind[S: LearningState](
     )
 
     def initialize(row):
+        if config.method == "nesa" and len(row) != (6 if config.t0 is not None else 5):
+            raise ValueError(
+                "NeSA parameter row does not match the configured schedule"
+            )
         mc_key, policy_key = jax.random.split(
             jax.random.key(row[0].astype(jnp.uint32), impl="threefry2x32")
         )
@@ -358,6 +368,7 @@ def build(config: Config, gammas: jax.Array) -> Runner:
                 eta=eta,
                 k0=float(row[3]),
                 zeta=float(row[4]),
+                t0=float(row[5]) if len(row) == 6 else None,
             ),
         )
     if config.method == "ql":
@@ -434,6 +445,8 @@ def parameters(config: Config) -> np.ndarray:
     values = [config.seed, config.gamma, eta, other]
     if config.method == "nesa":
         values.append(config.zeta)
+        if config.t0 is not None:
+            values.append(config.t0)
     return np.asarray(values, dtype=np.float64)
 
 

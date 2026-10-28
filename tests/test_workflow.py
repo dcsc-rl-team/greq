@@ -301,6 +301,7 @@ def test_nesa_report_figures_momentum_selection_and_legacy_csv(tmp_path, monkeyp
     legacy = replace(tuning[0], method="ql", zeta=None)
     record = asdict(legacy)
     record.pop("zeta")
+    record.pop("t0")
     legacy_path = Path("legacy.csv")
     with legacy_path.open("w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(record))
@@ -334,12 +335,22 @@ def test_nesa_experiment_validation(name, index, value):
         finetune.validate_table(table, np.array([0.9]), "nesa")
 
 
-def test_nesa_rows_map_all_parameters_discounts_and_full_uint32_seeds():
+@pytest.mark.parametrize("shifted", [False, True])
+def test_nesa_rows_map_all_parameters_discounts_and_full_uint32_seeds(shifted):
     cfg = run.Config(
-        method="nesa", n_states=2, n_actions=2, branching=2, n_steps=32, eval_every=8
+        method="nesa",
+        n_states=2,
+        n_actions=2,
+        branching=2,
+        n_steps=32,
+        eval_every=8,
+        t0=1 if shifted else None,
     )
     table = np.array(
-        [[0, 0.9, 1, 1, 1], [2**32 - 1, 0.999, 0.6, 10, 0.25]], dtype=np.float64
+        [[0, 0.9, 1, 1, 1, 1], [2**32 - 1, 0.999, 1, 1, 0.03, 10000]]
+        if shifted
+        else [[0, 0.9, 1, 1, 1], [2**32 - 1, 0.999, 0.6, 10, 0.25]],
+        dtype=np.float64,
     )
     finetune.validate_table(table, np.array([0.9, 0.999]), "nesa")
     runner = run.build(cfg, jnp.array([0.9, 0.999]))
@@ -354,6 +365,7 @@ def test_nesa_rows_map_all_parameters_discounts_and_full_uint32_seeds():
                 eta=float(row[2]),
                 k0=float(row[3]),
                 zeta=float(row[4]),
+                t0=float(row[5]) if shifted else None,
             )
         )
         mapped = jax.tree.map(lambda value, index=index: value[index], result)
@@ -386,6 +398,109 @@ def test_nesa_source_point_is_in_the_matched_budget_and_defaults_are_unchanged()
         replace(study, methods=("nesa",), nesa_zetas=(1.0, 1.0))
     with pytest.raises(ValueError, match="only to NeSA"):
         run.Config(method="ql", zeta=0.5)
+
+
+def test_shifted_nesa_has_exactly_two_search_dimensions_and_matches_trial_count():
+    cfg = finetune.Config(
+        methods=("nesa",),
+        nesa_t0s=(1, 10, 100, 1000, 3000, 10000),
+        nesa_zetas=(0.03, 0.1, 0.3, 1),
+    )
+    table = cfg.table("nesa")
+    assert table.shape == (4 * 24 * 3, 6)
+    np.testing.assert_array_equal(table[:, 2:4], np.ones((len(table), 2)))
+    assert set(table[:, 4]) == set(cfg.nesa_zetas)
+    assert set(table[:, 5]) == set(cfg.nesa_t0s)
+    assert [0, 0.95, 1, 1, 1, 1] in table.tolist()
+    assert (
+        sum(len(cfg.table(method)) for _ in cfg.environments for method in cfg.methods)
+        == 576
+    )
+    assert finetune.request(cfg, "tuning")["tuned_parameters"] == {
+        "nesa": ["t0", "zeta"]
+    }
+    assert cfg.config("garnet", "nesa", "tuning").t0 is not None
+    np.testing.assert_array_equal(
+        run.parameters(run.Config(method="nesa", t0=100)), [0, 0.99, 1, 1, 1, 100]
+    )
+    for index, value in ((2, 0.8), (3, 10), (4, 0), (5, 0), (5, float("nan"))):
+        bad = table[:1].copy()
+        bad[0, index] = value
+        with pytest.raises(ValueError, match="fixes|positive|finite"):
+            finetune.validate_table(bad, np.array(cfg.gammas), "nesa")
+    for changes in (
+        {"method": "ql", "t0": 10},
+        {"eta": 0.8, "t0": 10},
+        {"k0": 10, "t0": 10},
+    ):
+        with pytest.raises(ValueError, match="only to NeSA|fixes"):
+            run.Config(**{"method": "nesa", **changes})
+    runner = run.build(
+        run.Config(method="nesa", n_states=2, n_actions=2, branching=2),
+        jnp.array([0.95]),
+    )
+    with pytest.raises(ValueError, match="configured schedule"):
+        runner.initialize(jnp.asarray(table[0]))
+
+
+def test_shifted_nesa_report_records_t0_and_reuses_cache(tmp_path, monkeypatch):
+    from scripts.figures.__main__ import Config as FigureConfig
+    from scripts.figures.__main__ import run as figures
+
+    monkeypatch.chdir(tmp_path)
+    cfg = report.Config(
+        methods=("nesa",),
+        n_states=2,
+        n_actions=2,
+        branching=2,
+        n_steps=12,
+        eval_every=4,
+        gammas=(0.9,),
+        selection_seeds=(0, 1),
+        nesa_t0s=(1, 100),
+        nesa_zetas=(0.1, 1),
+        runtime=True,
+    )
+    assert cfg.table("nesa").shape == (8, 6)
+    path = report.run(cfg)
+    tuning = finetune.read_rows(cfg.output / "tuning.csv")
+    evaluation = finetune.read_rows(path)
+    runtime = finetune.read_rows(cfg.output / "runtime.csv")
+    assert (len(tuning), len(evaluation), len(runtime)) == (16, 88, 22)
+    assert all(
+        row.eta == 1
+        and row.k0 is None
+        and row.rho is None
+        and row.t0 in cfg.nesa_t0s
+        and row.zeta in cfg.nesa_zetas
+        for row in tuning + evaluation + runtime
+    )
+    winners = report.select(tuning, cfg.selection_seeds)
+    settings = {winner.runs[0].cell: winner.runs[0].setting for winner in winners}
+    assert all(row.setting == settings[row.cell] for row in evaluation + runtime)
+    assert figures(FigureConfig()).is_file()
+    for changes in ({"t0": 0}, {"eta": 0.8}, {"k0": 10}):
+        with pytest.raises(ValueError, match="shifted NeSA"):
+            replace(tuning[0], **changes)
+    # The previous 24-column NeSA schema remains readable without t0.
+    legacy = replace(tuning[0], t0=None, k0=1)
+    record = asdict(legacy)
+    record.pop("t0")
+    with Path("old-nesa.csv").open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(record))
+        writer.writeheader()
+        writer.writerow(record)
+    assert finetune.read_rows(Path("old-nesa.csv")) == (legacy,)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("shifted cache triggered computation")
+
+    monkeypatch.setattr(finetune, "finetune", forbidden)
+    monkeypatch.setattr(report, "execute", forbidden)
+    monkeypatch.setattr(report, "benchmark", forbidden)
+    assert report.run(cfg) == path
+    with pytest.raises(ValueError, match="different protocol"):
+        report.run(replace(cfg, nesa_t0s=(1,)))
 
 
 def test_protocol_requires_disjoint_eleven_seed_evaluation():
