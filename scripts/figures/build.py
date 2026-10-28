@@ -75,7 +75,14 @@ class Manifest:
     time_alignment: str = "linear interpolation on shared support; no extrapolation"
 
 
-_LABELS = {"greq": "GReQ", "ql": "QL", "zap": "Zap", "zap-batched": "Zap-batched"}
+_LABELS = {
+    "greq": "GReQ",
+    "ql": "QL",
+    "nesa": "NeSA",
+    "sql": "SQL",  # Read-only rendering of archived SQL runs from its own branch.
+    "zap": "Zap",
+    "zap-batched": "Zap-batched",
+}
 _METRICS = {
     "bellman_linf": "Bellman residual",
     "value_linf": "Value error",

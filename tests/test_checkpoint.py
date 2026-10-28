@@ -12,7 +12,7 @@ from jaxdp.mdp import Mdp
 from jaxtor.env.tabular import TabularEnv
 from jaxtor.sampler import Imc, Mc
 
-from greq import BatchedZap, Greq, InverseGain, QLearning, Zap, checkpoint
+from greq import BatchedZap, Greq, InverseGain, NeSA, QLearning, Zap, checkpoint
 from greq.environment import Garnet
 from greq.evaluation import Evaluation, optimal_q
 from greq.policy import Uniform
@@ -41,7 +41,13 @@ def composition(method=Greq, block=5, gamma=0.9):
         terminal=model.terminal,
     )
     row = jnp.asarray(
-        [0, gamma, agent.eta, agent.k0 if isinstance(agent, QLearning) else agent.rho]
+        [
+            0,
+            gamma,
+            agent.eta,
+            agent.k0 if isinstance(agent, (QLearning, NeSA)) else agent.rho,
+            *((agent.zeta,) if isinstance(agent, NeSA) else ()),
+        ]
     )
     initial = experiment.init(
         row,
@@ -66,6 +72,8 @@ def assert_same(left, right):
     [
         Greq,
         QLearning,
+        NeSA,
+        partial(NeSA, eta=0.6, k0=10, zeta=0.25),
         partial(Zap, gain=InverseGain()),
         partial(BatchedZap, gain=InverseGain(), batch_size=7),
     ],
@@ -104,9 +112,10 @@ def test_checkpoint_rejects_corrupt_leaf(tmp_path):
         checkpoint.load(path, initial)
 
 
-def test_block_boundaries_do_not_reset_chain():
-    small, first = composition(block=5)
-    large, second = composition(block=10)
+@pytest.mark.parametrize("method", [Greq, NeSA, partial(NeSA, zeta=0.5)])
+def test_block_boundaries_do_not_reset_chain(method):
+    small, first = composition(method, block=5)
+    large, second = composition(method, block=10)
     advance = jax.jit(small.advance)
     after_small = advance(advance(first))
     after_large = jax.jit(large.advance)(second)
@@ -119,6 +128,8 @@ def test_block_boundaries_do_not_reset_chain():
     "method",
     [
         Greq,
+        NeSA,
+        partial(NeSA, eta=0.6, k0=10, zeta=0.25),
         partial(Zap, gain=InverseGain()),
         partial(BatchedZap, gain=InverseGain(), batch_size=7),
     ],

@@ -18,7 +18,7 @@ from jaxdp.mdp import Mdp
 from jaxtor.env.tabular import TabularEnv, graph
 from jaxtor.sampler import Imc, Mc
 
-from greq import BatchedZap, Greq, InverseGain, QLearning, Zap
+from greq import BatchedZap, Greq, InverseGain, NeSA, QLearning, Zap
 from greq.environment import Garnet, require_irreducible
 from greq.evaluation import Evaluation, evaluate, optimal_q
 from greq.policy import Uniform
@@ -80,15 +80,16 @@ class Environment:
 class Config(Environment):
     """Environment, algorithm, budget, and trajectory seed for one run."""
 
-    method: Literal["greq", "ql", "zap", "zap-batched"] = "greq"
+    method: Literal["greq", "ql", "nesa", "zap", "zap-batched"] = "greq"
     output: Path = Path("runs/single")  # Unused output directory under runs/.
     n_steps: int = 10_000  # Samples, divisible by eval_every.
     eval_every: int = 100  # Samples between observations; final state is checkpointed.
     seed: int = 0  # Paired trajectory seed.
     gamma: float = 0.99
-    eta: float | None = None  # Default 0.5 for QL, 1 for matrix-gain methods.
+    eta: float | None = None  # Default 0.5 for QL, 1 otherwise.
     rho: float = 0.7
-    k0: float = 10.0  # QL global-clock scale.
+    k0: float | None = None  # Sample-clock scale; default 10 for QL, 1 for NeSA.
+    zeta: float = 1.0  # NeSA sampled-Jacobian and TD multiplier.
     batch_size: int | None = None  # Samples per batched-Zap update; default A*S.
     max_gain: float | None = 1e6  # Zap gain bound; None selects raw inversion.
     initial_scale: float = 1.0  # Initial Zap Jacobian scale.
@@ -96,8 +97,10 @@ class Config(Environment):
     def __post_init__(self) -> None:
         """Validate budgets, seeds, and artifact boundaries."""
         super().__post_init__()
-        if self.method not in ("greq", "ql", "zap", "zap-batched"):
+        if self.method not in ("greq", "ql", "nesa", "zap", "zap-batched"):
             raise ValueError("unknown learning method")
+        if self.method != "nesa" and self.zeta != 1.0:
+            raise ValueError("zeta applies only to NeSA")
         if self.batch_size is not None and self.method != "zap-batched":
             raise ValueError("batch_size applies only to zap-batched")
         if not 0 < self.n_steps < 2_147_483_647:
@@ -181,7 +184,7 @@ class Experiment[EnvS, LearnS: LearningState]:
         """Array-only experiment data.
 
         Attributes:
-            row: Seed, discount, eta, and rho/k0, ``(4,)``.
+            row: Seed, discount, eta, rho/k0, plus zeta for NeSA, (4,) or (5,).
             sampler: Behavior sampler state.
             learner: Learning state.
             evaluation: MDP arrays and certified reference.
@@ -221,7 +224,9 @@ class Experiment[EnvS, LearnS: LearningState]:
         evaluation: Evaluation.State,
     ) -> Experiment.State[EnvS, LearnS]:
         """Initialize owned data while receiving explicitly initialized children."""
-        chex.assert_shape(row, (4,))
+        chex.assert_rank(row, 1)
+        if row.shape[0] not in (4, 5):
+            raise ValueError("parameter rows require four values, or five for NeSA")
         return self.State(
             row=row,
             sampler=sampler,
@@ -241,7 +246,7 @@ class Experiment[EnvS, LearnS: LearningState]:
                 state,
                 sampler=sampled,
                 learner=self.learner.update_with(
-                    transition, state.learner, state.row[1], state.row[2], state.row[3]
+                    transition, state.learner, *state.row[1:]
                 ),
                 step=state.step + 1,
             )
@@ -340,11 +345,21 @@ def _bind[S: LearningState](
 
 def build(config: Config, gammas: jax.Array) -> Runner:
     """Configure a learner and its environment for the requested discounts."""
-    eta = (
-        config.eta
-        if config.eta is not None
-        else (0.5 if config.method == "ql" else 1.0)
-    )
+    row = parameters(config)
+    eta = float(row[2])
+    if config.method == "nesa":
+        return _bind(
+            config,
+            gammas,
+            NeSA(
+                n_states=config.n_states,
+                n_actions=config.n_actions,
+                gamma=config.gamma,
+                eta=eta,
+                k0=float(row[3]),
+                zeta=float(row[4]),
+            ),
+        )
     if config.method == "ql":
         return _bind(
             config,
@@ -354,7 +369,7 @@ def build(config: Config, gammas: jax.Array) -> Runner:
                 n_actions=config.n_actions,
                 gamma=config.gamma,
                 eta=eta,
-                k0=config.k0,
+                k0=float(row[3]),
             ),
         )
     if config.method == "greq":
@@ -409,15 +424,17 @@ def parameters(config: Config) -> np.ndarray:
         if config.eta is not None
         else (0.5 if config.method == "ql" else 1.0)
     )
-    return np.asarray(
-        [
-            config.seed,
-            config.gamma,
-            eta,
-            config.k0 if config.method == "ql" else config.rho,
-        ],
-        dtype=np.float64,
-    )
+    other = config.rho
+    if config.method in ("ql", "nesa"):
+        other = (
+            config.k0
+            if config.k0 is not None
+            else (1.0 if config.method == "nesa" else 10.0)
+        )
+    values = [config.seed, config.gamma, eta, other]
+    if config.method == "nesa":
+        values.append(config.zeta)
+    return np.asarray(values, dtype=np.float64)
 
 
 def run(config: Config) -> Experiment.Result:

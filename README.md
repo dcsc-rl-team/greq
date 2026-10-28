@@ -22,6 +22,16 @@ uv run -m scripts.report    # Evaluate selected settings
 
 Finetuning creates `runs/results/` with results in `tuning.csv`. The report saves the selected settings' evaluation results in `evaluation.csv`.
 
+[NeSA](docs/nesa.md) is available as an optional, per-transition momentum baseline:
+
+```bash
+uv run -m scripts.run --method nesa --output runs/nesa
+uv run -m scripts.report --methods nesa --runtime --output runs/nesa-study
+uv run -m scripts.figures --data runs/nesa-study
+```
+
+NeSA retains the full momentum vector and does not wait for state-action coverage. Its 24-setting search includes the reciprocal-step, unit-momentum reference setting and tunes decay, scale, and momentum with `--nesa-etas`, `--nesa-k0s`, and `--nesa-zetas`. Default comparisons remain GReQ, QL, Zap, and batched Zap. Include `nesa` alongside those methods in `--methods` to compare them, using a fresh output directory.
+
 **Render**: To render the results run the `figures` script:
 
 ```bash

@@ -68,7 +68,10 @@ def validate(tuning: Report, evaluation: Report, runtime: Report | None) -> None
     protocol = asdict(study)
     protocol.pop("output")
     protocol.pop("evaluation_seeds")
-    if tuning.request.get("protocol") != normalize(protocol):
+    tuning_protocol = asdict(Study(**tuning.request["protocol"]))
+    tuning_protocol.pop("output")
+    tuning_protocol.pop("evaluation_seeds")
+    if normalize(tuning_protocol) != normalize(protocol):
         raise ValueError("tuning and evaluation protocols differ")
     if evaluation.request.get("tuning_sha256") != tuning.sha256:
         raise ValueError("evaluation refers to a different tuning CSV")
@@ -105,7 +108,13 @@ def page(root: Path, report: Report, rows: tuple[Row, ...], title: str) -> Path:
     groups: dict[tuple, list[Row]] = {}
     for row in rows:
         groups.setdefault((*row.cell, row.seed), []).append(row)
-    labels = {"greq": "GReQ", "ql": "QL", "zap": "Zap", "zap-batched": "Zap-batched"}
+    labels = {
+        "greq": "GReQ",
+        "ql": "QL",
+        "nesa": "NeSA",
+        "zap": "Zap",
+        "zap-batched": "Zap-batched",
+    }
     runs = []
     for index, (_, members) in enumerate(sorted(groups.items())):
         members.sort(key=lambda row: row.step)

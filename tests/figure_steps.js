@@ -78,6 +78,11 @@ const heading = document.querySelector('#figure-title');
 check(heading.textContent === (manifest.title ?? ''), 'Wrong figure title');
 check(heading.hidden === !manifest.title, 'Incorrect title visibility');
 check(!document.querySelector('.seed'), 'Expected aggregated curves only');
+const expectedMethods = [...new Set(manifest.runs.map(run => run.label))].sort();
+for (const plot of document.querySelectorAll('.fig')) {
+  const actualMethods = [...plot.querySelectorAll('[data-series]')].map(group => group.dataset.series).sort();
+  check(JSON.stringify(actualMethods) === JSON.stringify(expectedMethods), 'Missing or duplicate algorithm curves');
+}
 check(document.querySelectorAll('#controls input[role="switch"]').length === 2, 'Missing axis switches');
 check(document.querySelectorAll('#controls select').length === 1, 'Unexpected dropdown');
 check(JSON.stringify([...document.querySelectorAll('#theme input')].map(input => input.value)) === JSON.stringify(['focus', 'gray', 'colorblind', 'raspberry', 'cobalt']), 'Unexpected palette choices');

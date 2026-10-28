@@ -14,6 +14,19 @@ test('CSV dashboard preserves metrics when grouping eleven complete trajectories
   assert.equal(groups[0][0].train_seconds, null);
 });
 
+test('NeSA reports retain momentum settings for learning and scalar runtime', () => {
+  const nesa = rows => rows.map(r => ({ ...r, method: 'nesa', rho: '', k0: '1', zeta: '.5' }));
+  const learning = nesa(curves());
+  const groups = groupReport(parseReport(learning), 'evaluation');
+  assert.equal(groups.length, 11);
+  assert.equal(groups[0][0].zeta, .5);
+  const runtimes = Array.from({ length: 11 }, (_, i) => record(i + 3, 2, { execution: 'scalar', train_seconds: '.1' }));
+  assert.equal(groupReport(parseReport(nesa(runtimes)), 'runtime').length, 11);
+  for (const zeta of ['', '0', 'NaN', 'Infinity']) assert.throws(() => parseReport(learning.map(r => ({ ...r, zeta }))));
+  assert.throws(() => groupReport(parseReport(learning.map((r, i) => i ? r : { ...r, zeta: '.25' })), 'evaluation'));
+  assert.throws(() => parseReport([record(3, 0, { zeta: '.5' })]));
+});
+
 test('dashboard rejects failed, incomplete, duplicate, or mixed-setting curves', () => {
   const rows = curves();
   for (const bad of [rows.slice(1), [...rows, rows[0]], rows.map((r, i) => i ? r : { ...r, status: 'failed' }), rows.map((r, i) => i ? r : { ...r, eta: '.9' })]) {

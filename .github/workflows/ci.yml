@@ -65,20 +65,27 @@ jobs:
           uv run --locked python -m scripts.run
           --output runs/checks/ci-single --n-steps 4 --eval-every 2
           --n-states 2 --n-actions 2 --branching 2
+      - name: Per-transition NeSA
+        run: >-
+          uv run --locked python -m scripts.run --method nesa --zeta 0.5
+          --output runs/checks/ci-nesa --n-steps 12 --eval-every 4
+          --n-states 2 --n-actions 2 --branching 2
       - name: Flat tuning CSV
         run: >-
           uv run --locked python -m scripts.finetune
           --output runs/checks/ci-final --n-steps 4 --eval-every 2
           --n-states 2 --n-actions 2 --branching 2
           --gammas 0.9 --etas 1 --rhos 0.7 --ql-etas 0.5 --ql-k0s 10
-          --selection-seeds 0 1
+          --nesa-etas 1 --nesa-k0s 1 --nesa-zetas 0.5 1
+          --selection-seeds 0 1 --methods greq ql nesa zap zap-batched
       - name: Eleven-seed evaluation and scalar runtime CSVs
         run: >-
           uv run --locked python -m scripts.report --runtime
           --output runs/checks/ci-final --n-steps 4 --eval-every 2
           --n-states 2 --n-actions 2 --branching 2
           --gammas 0.9 --etas 1 --rhos 0.7 --ql-etas 0.5 --ql-k0s 10
-          --selection-seeds 0 1
+          --nesa-etas 1 --nesa-k0s 1 --nesa-zetas 0.5 1
+          --selection-seeds 0 1 --methods greq ql nesa zap zap-batched
       - name: Standalone HTML figures
         run: uv run --locked python -m scripts.figures --data runs/checks/ci-final
       - name: Validated CSV reuse
@@ -87,4 +94,5 @@ jobs:
           --output runs/checks/ci-final --n-steps 4 --eval-every 2
           --n-states 2 --n-actions 2 --branching 2
           --gammas 0.9 --etas 1 --rhos 0.7 --ql-etas 0.5 --ql-k0s 10
-          --selection-seeds 0 1
+          --nesa-etas 1 --nesa-k0s 1 --nesa-zetas 0.5 1
+          --selection-seeds 0 1 --methods greq ql nesa zap zap-batched

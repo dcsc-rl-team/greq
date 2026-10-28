@@ -80,7 +80,13 @@ def _evaluation_table(
     """Expand fixed winning settings over the evaluation trajectory seeds."""
     return np.asarray(
         [
-            (seed, r.gamma, r.eta, r.k0 if method == "ql" else r.rho)
+            (
+                seed,
+                r.gamma,
+                r.eta,
+                r.k0 if method in ("ql", "nesa") else r.rho,
+                *((r.zeta,) if method == "nesa" else ()),
+            )
             for winner in winners
             for r in winner.runs[:1]
             if r.environment == environment and r.method == method
