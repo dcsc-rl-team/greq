@@ -1,6 +1,9 @@
 # Greedy-resolvent matrix-gain Q-learning
 
-Official implementation of GreQ that fully reproduce the results and the figures.
+[![Python 3.13](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![JAX 0.8.3](https://img.shields.io/badge/JAX-0.8.3-5E97F6)](https://docs.jax.dev/)
+
+Official implementation of GReQ that fully reproduce the results and the figures.
 
 ## Installation
 
